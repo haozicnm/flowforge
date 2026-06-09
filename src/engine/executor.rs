@@ -110,9 +110,12 @@ impl Executor {
             let step_outputs = state.read().await.flat_outputs();
             let resolved_config = resolver::resolve_node_config(node, &step_outputs)?;
 
-            // Collect inputs from upstream nodes
-            let state_guard = state.read().await;
-            let inputs = self.collect_inputs(node_id, edges, &state_guard);
+            // Collect inputs from upstream nodes, then drop the read lock
+            // BEFORE executing the node (node execution needs write lock for state update)
+            let inputs = {
+                let state_guard = state.read().await;
+                self.collect_inputs(node_id, edges, &state_guard)
+            };
 
             // Execute the node
             let executor = self.registry.get_executor(&node.node_type)?;

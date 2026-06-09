@@ -45,11 +45,11 @@ async fn main() {
         // Workflow CRUD
         .route("/api/workflows", get(api::list_workflows))
         .route("/api/workflows", post(api::create_workflow))
-        .route("/api/workflows/{id}", get(api::get_workflow))
-        .route("/api/workflows/{id}", put(api::update_workflow))
-        .route("/api/workflows/{id}", delete(api::delete_workflow))
+        .route("/api/workflows/:id", get(api::get_workflow))
+        .route("/api/workflows/:id", put(api::update_workflow))
+        .route("/api/workflows/:id", delete(api::delete_workflow))
         // Execution
-        .route("/api/workflows/{id}/execute", post(api::execute_workflow))
+        .route("/api/workflows/:id/execute", post(api::execute_workflow))
         .layer(CorsLayer::permissive())
         .with_state(state)
         .fallback_service(tower_http::services::ServeDir::new(&static_dir));

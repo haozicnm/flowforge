@@ -4,14 +4,14 @@
 //! No dynamic loading, no reflection. Explicit registration.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use crate::error::{FlowError, FlowResult};
 use crate::nodes::traits::{NodeExecutor, NodeTypeDef};
 
 /// Thread-safe registry of all node types.
 pub struct NodeRegistry {
-    executors: RwLock<HashMap<String, Box<dyn NodeExecutor>>>,
+    executors: RwLock<HashMap<String, Arc<dyn NodeExecutor>>>,
 }
 
 impl NodeRegistry {
@@ -35,7 +35,7 @@ impl NodeRegistry {
         self.executors
             .write()
             .expect("registry lock poisoned")
-            .insert(type_name, Box::new(executor));
+            .insert(type_name, Arc::new(executor));
     }
 
     fn register_builtin<E: NodeExecutor + Default + 'static>(&self) {
@@ -53,12 +53,13 @@ impl NodeRegistry {
     }
 
     /// Get an executor by type name.
-    pub fn get_executor(&self, type_name: &str) -> FlowResult<&dyn NodeExecutor> {
-        // This is safe because we only register at startup and never remove
-        let executors = self.executors.read().expect("registry lock poisoned");
-        // We can't return a reference from RwLockReadGuard, so we need a different approach
-        // For now, let's use a different pattern
-        todo!("Implement executor access pattern")
+    pub fn get_executor(&self, type_name: &str) -> FlowResult<Arc<dyn NodeExecutor>> {
+        self.executors
+            .read()
+            .expect("registry lock poisoned")
+            .get(type_name)
+            .cloned()
+            .ok_or_else(|| FlowError::NodeTypeNotFound(type_name.to_string()))
     }
 
     /// Check if a node type is registered.
