@@ -1,7 +1,6 @@
-/// FlowForge — Visual Workflow Automation Engine
-///
-/// Architecture: Flutter Desktop connects to Rust backend via HTTP.
-/// Pattern: AppFlowy (Stack layout + sidebar + reusable widgets)
+// FlowForge — Visual Workflow Automation Engine
+//
+// Architecture: Flutter Desktop connects to Rust backend via HTTP.
 import 'package:flutter/material.dart';
 import 'api/flowforge_api.dart';
 import 'services/server_manager.dart';
@@ -15,9 +14,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   final serverManager = ServerManager();
-
-  // Try to connect to existing server, or start a new one
   final externalUrl = const String.fromEnvironment('SERVER_URL');
+
   try {
     if (externalUrl.isNotEmpty) {
       await serverManager.start(externalServerUrl: externalUrl);
@@ -25,7 +23,7 @@ void main() async {
       await serverManager.start();
     }
   } catch (e) {
-    print('Server start failed: $e');
+    debugPrint('Server start failed: \$e');
   }
 
   runApp(FlowForgeApp(serverManager: serverManager));
@@ -49,7 +47,6 @@ class FlowForgeApp extends StatelessWidget {
   }
 }
 
-/// Main app shell — AppFlowy Stack pattern.
 class MainShell extends StatefulWidget {
   final ServerManager serverManager;
 
@@ -61,6 +58,14 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _selectedIndex = 0;
+  String? _selectedWorkflowId;
+
+  void _openWorkflow(String id) {
+    setState(() {
+      _selectedWorkflowId = id;
+      _selectedIndex = 1; // switch to editor
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,33 +76,24 @@ class _MainShellState extends State<MainShell> {
     return Scaffold(
       body: Stack(
         children: [
-          // Main content (full width)
           Positioned.fill(
-            left: ext.sidebarWidth + 1, // sidebar + divider
+            left: ext.sidebarWidth + 1,
             child: IndexedStack(
               index: _selectedIndex,
               children: [
-                DashboardPage(api: api),
-                EditorPage(api: api),
+                DashboardPage(api: api, onOpenEditor: _openWorkflow),
+                EditorPage(api: api, workflowId: _selectedWorkflowId),
                 const SettingsPage(),
               ],
             ),
           ),
-
-          // Sidebar (left side)
           Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
+            left: 0, top: 0, bottom: 0,
             width: ext.sidebarWidth,
             child: _buildSidebar(theme, ext),
           ),
-
-          // Divider between sidebar and content
           Positioned(
-            left: ext.sidebarWidth,
-            top: 0,
-            bottom: 0,
+            left: ext.sidebarWidth, top: 0, bottom: 0,
             child: const FfDivider(direction: Axis.vertical),
           ),
         ],
@@ -110,79 +106,41 @@ class _MainShellState extends State<MainShell> {
       color: ext.surfaceColor,
       child: Column(
         children: [
-          // Logo area
           SizedBox(
             height: ext.topBarHeight,
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: FlowForgeSpacing.md,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: FlowForgeSpacing.md),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.bolt,
-                    color: ext.brandColor,
-                    size: 24,
-                  ),
+                  Icon(Icons.bolt, color: ext.brandColor, size: 24),
                   const SizedBox(width: FlowForgeSpacing.sm),
-                  FfText(
-                    'FlowForge',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurface,
-                  ),
+                  FfText('FlowForge', fontSize: 16, fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurface),
                 ],
               ),
             ),
           ),
           const FfDivider(),
-
-          // Navigation items
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                vertical: FlowForgeSpacing.sm,
-              ),
+              padding: const EdgeInsets.symmetric(vertical: FlowForgeSpacing.sm),
               child: Column(
                 children: [
-                  _buildNavItem(
-                    index: 0,
-                    icon: Icons.workspaces_outlined,
-                    selectedIcon: Icons.workspaces,
-                    label: '工作流',
-                    ext: ext,
-                    theme: theme,
-                  ),
-                  _buildNavItem(
-                    index: 1,
-                    icon: Icons.edit_outlined,
-                    selectedIcon: Icons.edit,
-                    label: '编辑器',
-                    ext: ext,
-                    theme: theme,
-                  ),
-                  _buildNavItem(
-                    index: 2,
-                    icon: Icons.settings_outlined,
-                    selectedIcon: Icons.settings,
-                    label: '设置',
-                    ext: ext,
-                    theme: theme,
-                  ),
+                  _buildNavItem(index: 0, icon: Icons.workspaces_outlined,
+                    selectedIcon: Icons.workspaces, label: '工作流', ext: ext, theme: theme),
+                  _buildNavItem(index: 1, icon: Icons.edit_outlined,
+                    selectedIcon: Icons.edit, label: '编辑器', ext: ext, theme: theme),
+                  _buildNavItem(index: 2, icon: Icons.settings_outlined,
+                    selectedIcon: Icons.settings, label: '设置', ext: ext, theme: theme),
                 ],
               ),
             ),
           ),
-
-          // Footer
           const FfDivider(),
           Padding(
             padding: const EdgeInsets.all(FlowForgeSpacing.md),
-            child: FfText(
-              'v0.1.0',
-              fontSize: 11,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
-            ),
+            child: FfText('v0.1.0', fontSize: 11,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
           ),
         ],
       ),
@@ -198,35 +156,22 @@ class _MainShellState extends State<MainShell> {
     required ThemeData theme,
   }) {
     final isSelected = _selectedIndex == index;
-
     return FfButton(
       isSelected: isSelected,
       onTap: () => setState(() => _selectedIndex = index),
       builder: (context, isHovering) {
         return Container(
           height: 32,
-          margin: const EdgeInsets.symmetric(
-            horizontal: FlowForgeSpacing.sm,
-          ),
+          margin: const EdgeInsets.symmetric(horizontal: FlowForgeSpacing.sm),
           child: Row(
             children: [
               const SizedBox(width: FlowForgeSpacing.sm),
-              Icon(
-                isSelected ? selectedIcon : icon,
-                size: 20,
-                color: isSelected
-                    ? ext.brandColor
-                    : theme.colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
+              Icon(isSelected ? selectedIcon : icon, size: 20,
+                color: isSelected ? ext.brandColor : theme.colorScheme.onSurface.withValues(alpha: 0.6)),
               const SizedBox(width: FlowForgeSpacing.md),
-              FfText(
-                label,
-                fontSize: 13,
+              FfText(label, fontSize: 13,
                 fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                color: isSelected
-                    ? ext.brandColor
-                    : theme.colorScheme.onSurface.withValues(alpha: 0.8),
-              ),
+                color: isSelected ? ext.brandColor : theme.colorScheme.onSurface.withValues(alpha: 0.8)),
             ],
           ),
         );

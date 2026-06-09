@@ -1,4 +1,4 @@
-/// Settings page — AppFlowy pattern.
+// Settings page — AppFlowy pattern.
 import 'package:flutter/material.dart';
 import '../theme/flowforge_theme.dart';
 import '../widgets/ff_widgets.dart';

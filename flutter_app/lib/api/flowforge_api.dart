@@ -77,19 +77,92 @@ class PortDef {
   }
 }
 
-/// Workflow model.
+/// A node in a workflow.
+class WorkflowNode {
+  final String id;
+  final String type;
+  final String label;
+  final Map<String, dynamic> config;
+  final Map<String, double> position;
+
+  WorkflowNode({
+    required this.id,
+    required this.type,
+    this.label = '',
+    this.config = const {},
+    this.position = const {'x': 0, 'y': 0},
+  });
+
+  factory WorkflowNode.fromJson(Map<String, dynamic> json) {
+    return WorkflowNode(
+      id: json['id'] as String,
+      type: json['type'] as String,
+      label: (json['label'] as String?) ?? '',
+      config: (json['config'] as Map<String, dynamic>?) ?? {},
+      position: {
+        'x': (json['position']?['x'] as num?)?.toDouble() ?? 0,
+        'y': (json['position']?['y'] as num?)?.toDouble() ?? 0,
+      },
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type,
+        if (label.isNotEmpty) 'label': label,
+        'config': config,
+        'position': position,
+      };
+}
+
+/// An edge connecting two nodes.
+class WorkflowEdge {
+  final String from;
+  final String fromPort;
+  final String to;
+  final String toPort;
+
+  WorkflowEdge({
+    required this.from,
+    this.fromPort = 'out',
+    required this.to,
+    this.toPort = 'in',
+  });
+
+  factory WorkflowEdge.fromJson(Map<String, dynamic> json) {
+    return WorkflowEdge(
+      from: json['from'] as String,
+      fromPort: (json['from_port'] as String?) ?? 'out',
+      to: json['to'] as String,
+      toPort: (json['to_port'] as String?) ?? 'in',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'from': from,
+        'from_port': fromPort,
+        'to': to,
+        'to_port': toPort,
+      };
+}
+
+/// Workflow model — matches Rust backend exactly.
 class Workflow {
   final String id;
   final String name;
-  final String? description;
-  final String? yaml;
+  final String description;
+  final List<WorkflowNode> nodes;
+  final List<WorkflowEdge> edges;
+  final List<dynamic> variables;
   final DateTime createdAt;
 
   Workflow({
     required this.id,
     required this.name,
-    this.description,
-    this.yaml,
+    this.description = '',
+    this.nodes = const [],
+    this.edges = const [],
+    this.variables = const [],
     required this.createdAt,
   });
 
@@ -97,11 +170,51 @@ class Workflow {
     return Workflow(
       id: json['id'] as String,
       name: json['name'] as String,
-      description: json['description'] as String?,
-      yaml: json['yaml'] as String?,
+      description: (json['description'] as String?) ?? '',
+      nodes: (json['nodes'] as List?)
+              ?.map((n) => WorkflowNode.fromJson(n as Map<String, dynamic>))
+              .toList() ??
+          [],
+      edges: (json['edges'] as List?)
+              ?.map((e) => WorkflowEdge.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      variables: (json['variables'] as List?) ?? [],
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
+
+  int get nodeCount => nodes.length;
+  int get edgeCount => edges.length;
+}
+
+/// Execution result from the server.
+class ExecutionResult {
+  final String status;
+  final Map<String, dynamic> nodeOutputs;
+  final List<String> completed;
+  final String? error;
+
+  ExecutionResult({
+    required this.status,
+    this.nodeOutputs = const {},
+    this.completed = const [],
+    this.error,
+  });
+
+  factory ExecutionResult.fromJson(Map<String, dynamic> json) {
+    return ExecutionResult(
+      status: json['status'] as String,
+      nodeOutputs: (json['node_outputs'] as Map<String, dynamic>?) ?? {},
+      completed: (json['completed'] as List?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+      error: json['error'] as String?,
+    );
+  }
+
+  bool get isSuccess => status == 'completed';
 }
 
 /// FlowForge API client.
@@ -111,7 +224,8 @@ class FlowForgeApi {
 
   FlowForgeApi({required this.baseUrl}) : _client = http.Client();
 
-  /// Check if the server is healthy.
+  // ── Health ──
+
   Future<HealthResponse> health() async {
     final response = await _client.get(Uri.parse('$baseUrl/api/health'));
     if (response.statusCode != 200) {
@@ -122,7 +236,8 @@ class FlowForgeApi {
     );
   }
 
-  /// Get all registered node types.
+  // ── Node Types ──
+
   Future<List<NodeTypeDef>> nodeTypes() async {
     final response =
         await _client.get(Uri.parse('$baseUrl/api/nodes/types'));
@@ -135,7 +250,8 @@ class FlowForgeApi {
         .toList();
   }
 
-  /// List all workflows.
+  // ── Workflow CRUD ──
+
   Future<List<Workflow>> listWorkflows() async {
     final response =
         await _client.get(Uri.parse('$baseUrl/api/workflows'));
@@ -147,6 +263,83 @@ class FlowForgeApi {
     return list
         .map((j) => Workflow.fromJson(j as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<Workflow> createWorkflow(String name, {String? description}) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/workflows'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'name': name,
+        if (description != null) 'description': description,
+      }),
+    );
+    if (response.statusCode != 201) {
+      throw ApiException('Failed to create workflow: ${response.statusCode}');
+    }
+    return Workflow.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<Workflow> getWorkflow(String id) async {
+    final response =
+        await _client.get(Uri.parse('$baseUrl/api/workflows/$id'));
+    if (response.statusCode != 200) {
+      throw ApiException('Failed to get workflow: ${response.statusCode}');
+    }
+    return Workflow.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<Workflow> updateWorkflow(
+    String id, {
+    String? name,
+    String? description,
+    List<WorkflowNode>? nodes,
+    List<WorkflowEdge>? edges,
+  }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (description != null) body['description'] = description;
+    if (nodes != null) body['nodes'] = nodes.map((n) => n.toJson()).toList();
+    if (edges != null) body['edges'] = edges.map((e) => e.toJson()).toList();
+
+    final response = await _client.put(
+      Uri.parse('$baseUrl/api/workflows/$id'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw ApiException('Failed to update workflow: ${response.statusCode}');
+    }
+    return Workflow.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  Future<void> deleteWorkflow(String id) async {
+    final response =
+        await _client.delete(Uri.parse('$baseUrl/api/workflows/$id'));
+    if (response.statusCode != 204) {
+      throw ApiException('Failed to delete workflow: ${response.statusCode}');
+    }
+  }
+
+  // ── Execution ──
+
+  Future<ExecutionResult> executeWorkflow(String id) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/workflows/$id/execute'),
+      headers: {'Content-Type': 'application/json'},
+    );
+    if (response.statusCode != 200) {
+      throw ApiException('Failed to execute: ${response.statusCode}');
+    }
+    return ExecutionResult.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
   }
 
   /// Dispose the HTTP client.

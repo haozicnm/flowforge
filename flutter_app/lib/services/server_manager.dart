@@ -1,13 +1,12 @@
 /// Rust server lifecycle manager.
-///
-/// Starts the Rust backend as a child process, waits for it to be ready,
-/// and stops it when the Flutter app exits.
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 
-import 'flowforge_api.dart';
+import '../api/flowforge_api.dart';
 
 /// Manages the Rust backend server process.
 class ServerManager {
@@ -15,13 +14,8 @@ class ServerManager {
   String _serverUrl = 'http://127.0.0.1:19529';
   bool _startedByUs = false;
 
-  /// The server URL.
   String get serverUrl => _serverUrl;
 
-  /// Start the Rust server.
-  ///
-  /// If [externalServerUrl] is provided, connects to an existing server
-  /// instead of starting a new one (for development mode).
   Future<void> start({String? externalServerUrl}) async {
     if (externalServerUrl != null) {
       _serverUrl = externalServerUrl;
@@ -30,20 +24,16 @@ class ServerManager {
       await _startProcess();
       _startedByUs = true;
     }
-
-    // Wait for server to be ready
     await _waitForReady();
   }
 
-  /// Start the Rust server process.
   Future<void> _startProcess() async {
-    // Find the workflow-engine binary
     final exePath = _findServerBinary();
     if (exePath == null) {
       throw ServerException('Cannot find flowforge server binary');
     }
 
-    print('Starting server: $exePath');
+    debugPrint('Starting server: $exePath');
     _process = await Process.start(
       exePath,
       [],
@@ -53,38 +43,35 @@ class ServerManager {
       },
     );
 
-    // Log server output
-    _process!.stdout.transform(const SystemEncoding()).listen((line) {
-      print('[server] $line');
+    _process!.stdout.transform(utf8.decoder).listen((line) {
+      debugPrint('[server] $line');
     });
-    _process!.stderr.transform(const SystemEncoding()).listen((line) {
-      print('[server:err] $line');
+    _process!.stderr.transform(utf8.decoder).listen((line) {
+      debugPrint('[server:err] $line');
     });
   }
 
-  /// Find the server binary in common locations.
   String? _findServerBinary() {
-    // Check environment variable
     final envPath = Platform.environment['FLOWFORGE_SERVER'];
     if (envPath != null && File(envPath).existsSync()) return envPath;
 
-    // Check relative to the app
     final appDir = File(Platform.resolvedExecutable).parent.path;
     final candidates = [
       '$appDir/flowforge',
+      '$appDir/flowforge.exe',
       '$appDir/../flowforge',
       '${Directory.current.path}/target/release/flowforge',
+      '${Directory.current.path}/target/release/flowforge.exe',
       '${Directory.current.path}/target/debug/flowforge',
+      '${Directory.current.path}/target/debug/flowforge.exe',
     ];
 
     for (final path in candidates) {
       if (File(path).existsSync()) return path;
     }
-
     return null;
   }
 
-  /// Wait for the server to be ready (poll /api/health).
   Future<void> _waitForReady() async {
     final api = FlowForgeApi(baseUrl: _serverUrl);
     final deadline = DateTime.now().add(const Duration(seconds: 15));
@@ -93,13 +80,11 @@ class ServerManager {
       try {
         final health = await api.health();
         if (health.status == 'ok') {
-          print('Server ready: v${health.version}');
+          debugPrint('Server ready: v${health.version}');
           api.dispose();
           return;
         }
-      } catch (_) {
-        // Server not ready yet, keep waiting
-      }
+      } catch (_) {}
       await Future.delayed(const Duration(milliseconds: 300));
     }
 
@@ -107,10 +92,9 @@ class ServerManager {
     throw ServerException('Server failed to start within 15 seconds');
   }
 
-  /// Stop the server (if we started it).
   Future<void> stop() async {
     if (_startedByUs && _process != null) {
-      print('Stopping server...');
+      debugPrint('Stopping server...');
       _process!.kill(ProcessSignal.sigterm);
       await _process!.exitCode.timeout(
         const Duration(seconds: 3),
@@ -124,7 +108,6 @@ class ServerManager {
   }
 }
 
-/// Server exception.
 class ServerException implements Exception {
   final String message;
   ServerException(this.message);

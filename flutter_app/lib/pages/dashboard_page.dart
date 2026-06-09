@@ -1,4 +1,4 @@
-/// Dashboard page — AppFlowy pattern with reusable widgets.
+// Dashboard page — workflow list with create/delete.
 import 'package:flutter/material.dart';
 import '../api/flowforge_api.dart';
 import '../theme/flowforge_theme.dart';
@@ -6,8 +6,9 @@ import '../widgets/ff_widgets.dart';
 
 class DashboardPage extends StatefulWidget {
   final FlowForgeApi api;
+  final ValueChanged<String>? onOpenEditor;
 
-  const DashboardPage({super.key, required this.api});
+  const DashboardPage({super.key, required this.api, this.onOpenEditor});
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -39,6 +40,77 @@ class _DashboardPageState extends State<DashboardPage> {
     }
   }
 
+  Future<void> _createWorkflow() async {
+    final name = await _showCreateDialog();
+    if (name == null || name.isEmpty) return;
+
+    try {
+      final wf = await widget.api.createWorkflow(name);
+      setState(() => _workflows.insert(0, wf));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('创建失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteWorkflow(Workflow wf) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('确定删除工作流"${wf.name}"？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('删除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    try {
+      await widget.api.deleteWorkflow(wf.id);
+      setState(() => _workflows.removeWhere((w) => w.id == wf.id));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<String?> _showCreateDialog() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新建工作流'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '工作流名称',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('创建'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -49,11 +121,8 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top bar
           _buildTopBar(theme, ext),
           const SizedBox(height: FlowForgeSpacing.lg),
-
-          // Content
           Expanded(child: _buildContent(theme, ext)),
         ],
       ),
@@ -65,67 +134,42 @@ class _DashboardPageState extends State<DashboardPage> {
       height: ext.topBarHeight,
       child: Row(
         children: [
-          FfText(
-            '我的工作流',
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-            color: theme.colorScheme.onSurface,
-          ),
+          FfText('我的工作流', fontSize: 22, fontWeight: FontWeight.w600),
           const Spacer(),
-          _buildNewWorkflowButton(ext),
+          FfButton(
+            onTap: _createWorkflow,
+            builder: (context, isHovering) {
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: FlowForgeSpacing.md,
+                  vertical: FlowForgeSpacing.sm,
+                ),
+                decoration: BoxDecoration(
+                  color: isHovering
+                      ? ext.brandColor.withValues(alpha: 0.8)
+                      : ext.brandColor,
+                  borderRadius: BorderRadius.circular(FlowForgeRadius.md),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add, size: 16, color: Colors.white),
+                    SizedBox(width: FlowForgeSpacing.xs),
+                    FfText('新建工作流', fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500),
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildNewWorkflowButton(FlowForgeThemeExtension ext) {
-    return FfButton(
-      onTap: () {
-        // TODO: create new workflow
-      },
-      builder: (context, isHovering) {
-        return Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: FlowForgeSpacing.md,
-            vertical: FlowForgeSpacing.sm,
-          ),
-          decoration: BoxDecoration(
-            color: isHovering
-                ? ext.brandColor.withValues(alpha: 0.8)
-                : ext.brandColor,
-            borderRadius: BorderRadius.circular(FlowForgeRadius.md),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add, size: 16, color: Colors.white),
-              SizedBox(width: FlowForgeSpacing.xs),
-              FfText(
-                '新建工作流',
-                fontSize: 13,
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
   Widget _buildContent(ThemeData theme, FlowForgeThemeExtension ext) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_error != null) {
-      return _buildError(theme);
-    }
-
-    if (_workflows.isEmpty) {
-      return _buildEmpty(theme, ext);
-    }
-
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null) return _buildError(theme);
+    if (_workflows.isEmpty) return _buildEmpty(theme, ext);
     return _buildWorkflowGrid(theme);
   }
 
@@ -134,20 +178,15 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline,
-              size: 48, color: theme.colorScheme.error),
+          Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
           const SizedBox(height: FlowForgeSpacing.md),
-          FfText('连接服务器失败',
-              fontSize: 18, fontWeight: FontWeight.w600),
+          const FfText('连接服务器失败', fontSize: 18, fontWeight: FontWeight.w600),
           const SizedBox(height: FlowForgeSpacing.sm),
           FfText(_error!, fontSize: 13),
           const SizedBox(height: FlowForgeSpacing.md),
           FfButton(
             onTap: () {
-              setState(() {
-                _loading = true;
-                _error = null;
-              });
+              setState(() { _loading = true; _error = null; });
               _loadWorkflows();
             },
             builder: (context, _) => const FfText('重试'),
@@ -162,12 +201,9 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.workspaces_outlined,
-              size: 64,
-              color: ext.brandColor.withValues(alpha: 0.5)),
+          Icon(Icons.workspaces_outlined, size: 64, color: ext.brandColor.withValues(alpha: 0.5)),
           const SizedBox(height: FlowForgeSpacing.md),
-          FfText('还没有工作流',
-              fontSize: 18, fontWeight: FontWeight.w600),
+          const FfText('还没有工作流', fontSize: 18, fontWeight: FontWeight.w600),
           const SizedBox(height: FlowForgeSpacing.sm),
           FfText(
             '点击"新建工作流"开始自动化之旅',
@@ -189,17 +225,22 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
       itemCount: _workflows.length,
       itemBuilder: (context, index) {
-        return _WorkflowCard(workflow: _workflows[index]);
+        return _WorkflowCard(
+          workflow: _workflows[index],
+          onTap: () => widget.onOpenEditor?.call(_workflows[index].id),
+          onDelete: () => _deleteWorkflow(_workflows[index]),
+        );
       },
     );
   }
 }
 
-/// Workflow card with FfHover.
 class _WorkflowCard extends StatelessWidget {
   final Workflow workflow;
+  final VoidCallback? onTap;
+  final VoidCallback? onDelete;
 
-  const _WorkflowCard({required this.workflow});
+  const _WorkflowCard({required this.workflow, this.onTap, this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -207,9 +248,7 @@ class _WorkflowCard extends StatelessWidget {
     final ext = theme.extension<FlowForgeThemeExtension>()!;
 
     return FfHover(
-      onTap: () {
-        // TODO: navigate to editor
-      },
+      onTap: onTap,
       borderRadius: BorderRadius.circular(FlowForgeRadius.lg),
       child: Container(
         padding: const EdgeInsets.all(FlowForgeSpacing.md),
@@ -222,31 +261,41 @@ class _WorkflowCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.play_circle_outline,
-                    color: ext.brandColor, size: 18),
+                Icon(Icons.play_circle_outline, color: ext.brandColor, size: 18),
                 const SizedBox(width: FlowForgeSpacing.sm),
                 Expanded(
-                  child: FfText(
-                    workflow.name,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                  child: FfText(workflow.name, fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                // Delete button
+                FfButton(
+                  onTap: onDelete,
+                  builder: (ctx, hovering) => Icon(
+                    Icons.delete_outline,
+                    size: 16,
+                    color: hovering ? Colors.red : theme.colorScheme.onSurface.withValues(alpha: 0.3),
                   ),
                 ),
               ],
             ),
             const Spacer(),
-            if (workflow.description != null)
-              FfText(
-                workflow.description!,
-                fontSize: 12,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                maxLines: 2,
-              ),
+            if (workflow.description.isNotEmpty)
+              FfText(workflow.description, fontSize: 12, maxLines: 2,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6)),
             const SizedBox(height: FlowForgeSpacing.sm),
-            FfText(
-              _formatDate(workflow.createdAt),
-              fontSize: 11,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+            Row(
+              children: [
+                FfText(
+                  '${workflow.nodeCount} 节点',
+                  fontSize: 11,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                ),
+                const SizedBox(width: FlowForgeSpacing.md),
+                FfText(
+                  _formatDate(workflow.createdAt),
+                  fontSize: 11,
+                  color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+                ),
+              ],
             ),
           ],
         ),
