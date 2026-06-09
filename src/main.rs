@@ -9,7 +9,10 @@ mod error;
 mod nodes;
 mod state;
 
-use axum::{routing::get, Router};
+use axum::{
+    routing::{delete, get, post, put},
+    Router,
+};
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::prelude::*;
 
@@ -35,8 +38,18 @@ async fn main() {
 
     // Build router
     let app = Router::new()
+        // Health
         .route("/api/health", get(api::health))
+        // Node types
         .route("/api/nodes/types", get(api::node_types))
+        // Workflow CRUD
+        .route("/api/workflows", get(api::list_workflows))
+        .route("/api/workflows", post(api::create_workflow))
+        .route("/api/workflows/{id}", get(api::get_workflow))
+        .route("/api/workflows/{id}", put(api::update_workflow))
+        .route("/api/workflows/{id}", delete(api::delete_workflow))
+        // Execution
+        .route("/api/workflows/{id}/execute", post(api::execute_workflow))
         .layer(CorsLayer::permissive())
         .with_state(state)
         .fallback_service(tower_http::services::ServeDir::new(&static_dir));

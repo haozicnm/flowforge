@@ -1,37 +1,31 @@
-//! Unified application state.
+//! Application state — single source of truth.
 //!
-//! Rule: ALL state lives here. No global singletons, no bypassing axum State.
-//! Access via `State<AppState>` in handlers.
+//! Rule: All shared state lives here. Passed via axum::extract::State.
+//! No global singletons. No static mutable state.
 
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
-use crate::engine::workflow::Workflow;
+use crate::engine::storage::WorkflowStorage;
+use crate::nodes::registry::NodeRegistry;
 
-/// The single source of truth for all application state.
+/// Shared application state.
 #[derive(Clone)]
 pub struct AppState {
-    /// Saved workflows (id → Workflow).
-    pub workflows: Arc<RwLock<HashMap<String, Workflow>>>,
+    /// Node type registry.
+    pub node_registry: Arc<NodeRegistry>,
 
-    /// Node type registry (type_name → NodeDef).
-    pub node_registry: Arc<crate::nodes::registry::NodeRegistry>,
+    /// Workflow persistence.
+    pub storage: Arc<WorkflowStorage>,
 
-    /// Server config.
+    /// Server configuration.
     pub config: ServerConfig,
 }
 
-/// Server-level configuration.
-#[derive(Clone, Debug)]
+/// Server configuration.
+#[derive(Debug, Clone)]
 pub struct ServerConfig {
-    /// Bind address (default: 127.0.0.1, NOT 0.0.0.0)
     pub bind_addr: String,
-
-    /// Static files directory for the frontend.
     pub static_dir: String,
-
-    /// Data directory for workflows, logs, etc.
     pub data_dir: String,
 }
 
@@ -47,9 +41,12 @@ impl Default for ServerConfig {
 
 impl AppState {
     pub fn new(config: ServerConfig) -> Self {
+        let storage = WorkflowStorage::new(&config.data_dir);
+        storage.init().expect("Failed to initialize storage");
+
         Self {
-            workflows: Arc::new(RwLock::new(HashMap::new())),
-            node_registry: Arc::new(crate::nodes::registry::NodeRegistry::new()),
+            node_registry: Arc::new(NodeRegistry::new()),
+            storage: Arc::new(storage),
             config,
         }
     }

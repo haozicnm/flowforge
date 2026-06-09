@@ -21,6 +21,9 @@ pub enum FlowError {
     #[error("Node type not found: {0}")]
     NodeTypeNotFound(String),
 
+    #[error("Node not found: {0}")]
+    NodeNotFound(String),
+
     #[error("Node {node_id}: {message}")]
     NodeError { node_id: String, message: String },
 
@@ -34,12 +37,22 @@ pub enum FlowError {
     #[error("Variable resolution failed for node {node_id}: {reason}")]
     VariableResolutionFailed { node_id: String, reason: String },
 
+    #[error("Variable not found in node {node_id}: {var_ref}")]
+    VariableNotFound { node_id: String, var_ref: String },
+
     // ── Execution errors ──
+    #[error("Execution error: {0}")]
+    ExecutionError(String),
+
     #[error("Execution timeout after {seconds}s for node {node_id}")]
     ExecutionTimeout { node_id: String, seconds: u64 },
 
     #[error("Execution aborted: {reason}")]
     ExecutionAborted { reason: String },
+
+    // ── Storage errors ──
+    #[error("Storage error: {detail}")]
+    StorageError { detail: String },
 
     // ── IO errors ──
     #[error("IO error: {0}")]
@@ -48,11 +61,7 @@ pub enum FlowError {
     // ── JSON errors ──
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
-
-    // ── YAML errors ──
-    #[error("YAML error: {0}")]
-    Yaml(#[from] serde_yaml::Error),
 }
 
-/// Result alias for FlowForge operations.
+/// Result type alias.
 pub type FlowResult<T> = Result<T, FlowError>;

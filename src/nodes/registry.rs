@@ -22,6 +22,10 @@ impl NodeRegistry {
         // Register built-in nodes
         registry.register_builtin::<super::http_node::HttpNode>();
         registry.register_builtin::<super::shell_node::ShellNode>();
+        registry.register_builtin::<super::delay_node::DelayNode>();
+        registry.register_builtin::<super::script_node::ScriptNode>();
+        registry.register_builtin::<super::webhook_node::WebhookNode>();
+        registry.register_builtin::<super::log_node::LogNode>();
         registry
     }
 
@@ -30,7 +34,7 @@ impl NodeRegistry {
         let type_name = executor.type_def().type_name.clone();
         self.executors
             .write()
-            .expect("registry lock poisoned") // safe: only write at startup
+            .expect("registry lock poisoned")
             .insert(type_name, Box::new(executor));
     }
 
@@ -49,17 +53,12 @@ impl NodeRegistry {
     }
 
     /// Get an executor by type name.
-    pub fn get(&self, type_name: &str) -> FlowResult<Box<dyn NodeExecutor>> {
-        self.executors
-            .read()
-            .expect("registry lock poisoned")
-            .get(type_name)
-            .map(|e| {
-                // Return a new instance via type_def + re-creation
-                // For now, we'll use a different approach in the executor
-                todo!("clone executor for execution")
-            })
-            .ok_or_else(|| FlowError::NodeTypeNotFound(type_name.to_string()))
+    pub fn get_executor(&self, type_name: &str) -> FlowResult<&dyn NodeExecutor> {
+        // This is safe because we only register at startup and never remove
+        let executors = self.executors.read().expect("registry lock poisoned");
+        // We can't return a reference from RwLockReadGuard, so we need a different approach
+        // For now, let's use a different pattern
+        todo!("Implement executor access pattern")
     }
 
     /// Check if a node type is registered.

@@ -1,6 +1,6 @@
 //! Workflow data model.
 //!
-//! This is the canonical structure. Dart/TypeScript models must match this exactly.
+//! This is the canonical structure. Dart models must match this exactly.
 
 use serde::{Deserialize, Serialize};
 
@@ -11,11 +11,38 @@ pub struct Workflow {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    #[serde(default)]
     pub nodes: Vec<Node>,
     #[serde(default)]
     pub edges: Vec<Edge>,
     #[serde(default)]
     pub variables: Vec<Variable>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl Workflow {
+    /// Create a new workflow with auto-generated ID.
+    pub fn new(name: String, description: Option<String>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            description: description.unwrap_or_default(),
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            variables: Vec::new(),
+            created_at: chrono::Utc::now(),
+        }
+    }
+
+    /// Get nodes (direct access).
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes
+    }
+
+    /// Get edges (direct access).
+    pub fn edges(&self) -> &[Edge] {
+        &self.edges
+    }
 }
 
 /// A single node in the workflow.

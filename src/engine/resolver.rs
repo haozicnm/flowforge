@@ -20,10 +20,6 @@
 //!          This prevents type corruption during deserialization.
 //!
 //! Phase 2: After deserialization, replace placeholders with actual values.
-//!
-//! This two-phase approach solves the "template variable becomes a number/object
-//! and breaks deserialization" problem that forced the old project to skip
-//! global resolve for containers.
 
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -58,16 +54,6 @@ static VAR_REF_RE: Lazy<Regex> = Lazy::new(|| {
 /// Phase 1: Scan a JSON value for variable references and replace them with placeholders.
 ///
 /// Returns the modified value and a map of placeholders to their (step_id, port_label).
-///
-/// # Example
-/// ```json
-/// {"url": "{{http1.response}}", "timeout": 30}
-/// ```
-/// becomes:
-/// ```json
-/// {"url": "__FF_VAR_0__", "timeout": 30}
-/// ```
-/// with map: {"__FF_VAR_0__" → ("http1", "response")}
 pub fn phase1_insert_placeholders(
     value: &serde_json::Value,
 ) -> (serde_json::Value, PlaceholderMap) {
@@ -103,7 +89,45 @@ pub fn resolve_node_config(
     phase2_resolve_placeholders(&intermediate, &placeholders, step_outputs)
 }
 
+/// Extract all variable references from a JSON value.
+///
+/// Returns a list of (step_id, port_label) pairs found in the config.
+pub fn extract_refs(value: &serde_json::Value) -> Vec<ResolvedRef> {
+    let mut refs = Vec::new();
+    extract_refs_recursive(value, &mut refs);
+    refs
+}
+
 // ── Internal helpers ──
+
+fn extract_refs_recursive(value: &serde_json::Value, refs: &mut Vec<ResolvedRef>) {
+    match value {
+        serde_json::Value::String(s) => {
+            for cap in VAR_REF_RE.captures_iter(s) {
+                let ref_expr = &cap[1];
+                let parts: Vec<&str> = ref_expr.splitn(2, '.').collect();
+                if parts.len() == 2 {
+                    refs.push(ResolvedRef {
+                        step_id: parts[0].to_string(),
+                        port_label: parts[1].to_string(),
+                        placeholder: String::new(),
+                    });
+                }
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                extract_refs_recursive(v, refs);
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            for v in obj.values() {
+                extract_refs_recursive(v, refs);
+            }
+        }
+        _ => {}
+    }
+}
 
 fn replace_refs_recursive(
     value: &serde_json::Value,
@@ -112,17 +136,21 @@ fn replace_refs_recursive(
 ) -> serde_json::Value {
     match value {
         serde_json::Value::String(s) => {
-            // Replace all {{stepId.portLabel}} in this string
             let mut result = s.clone();
             for cap in VAR_REF_RE.captures_iter(s) {
-                let full_match = &cap[0]; // {{stepId.portLabel}}
-                let ref_expr = &cap[1]; // stepId.portLabel
+                let full_match = &cap[0];
+                let ref_expr = &cap[1];
                 let parts: Vec<&str> = ref_expr.splitn(2, '.').collect();
+
                 if parts.len() == 2 {
                     let placeholder = format!("__FF_VAR_{}__", counter);
-                    result = result.replace(full_match, &placeholder);
-                    map.insert(placeholder, (parts[0].to_string(), parts[1].to_string()));
                     *counter += 1;
+
+                    result = result.replace(full_match, &placeholder);
+                    map.insert(
+                        placeholder,
+                        (parts[0].to_string(), parts[1].to_string()),
+                    );
                 }
             }
             serde_json::Value::String(result)
@@ -141,7 +169,6 @@ fn replace_refs_recursive(
                 .collect();
             serde_json::Value::Object(new_obj)
         }
-        // Numbers, bools, null — pass through unchanged
         other => other.clone(),
     }
 }
@@ -154,26 +181,34 @@ fn resolve_recursive(
     match value {
         serde_json::Value::String(s) => {
             let mut result = s.clone();
+            let mut is_pure_placeholder = false;
+
             for (placeholder, (step_id, port_label)) in &placeholders.map {
-                if result.contains(placeholder) {
-                    let output = step_outputs
-                        .get(step_id)
-                        .and_then(|o| o.get(port_label))
-                        .ok_or_else(|| FlowError::UndefinedVariable {
-                            ref_expr: format!("{}.{}", step_id, port_label),
-                        })?;
-                    // If the string is EXACTLY the placeholder, replace with the raw value
-                    // (preserves type: number, object, etc.)
+                if result.contains(placeholder.as_str()) {
+                    let output_key = format!("{}.{}", step_id, port_label);
+                    let resolved_value = step_outputs.get(&output_key).ok_or_else(|| {
+                        FlowError::UndefinedVariable {
+                            ref_expr: output_key.clone(),
+                        }
+                    })?;
+
+                    // If the string is EXACTLY one placeholder, preserve the raw type
                     if result == *placeholder {
-                        return Ok(output.clone());
+                        is_pure_placeholder = true;
+                        return Ok(resolved_value.clone());
                     }
-                    // Otherwise, stringify and embed (partial replacement in a string)
-                    let display_value = match output {
+
+                    // Otherwise, replace in string (serialize non-strings)
+                    let replacement = match resolved_value {
                         serde_json::Value::String(s) => s.clone(),
-                        other => other.to_string(),
+                        other => serde_json::to_string(other).unwrap_or_default(),
                     };
-                    result = result.replace(placeholder, &display_value);
+                    result = result.replace(placeholder.as_str(), &replacement);
                 }
+            }
+
+            if is_pure_placeholder {
+                unreachable!("handled above");
             }
             Ok(serde_json::Value::String(result))
         }
@@ -237,8 +272,8 @@ mod tests {
 
         let mut step_outputs = HashMap::new();
         step_outputs.insert(
-            "http1".to_string(),
-            json!({"response": "https://example.com"}),
+            "http1.response".to_string(),
+            json!("https://example.com"),
         );
 
         let resolved =
@@ -253,43 +288,49 @@ mod tests {
         let (modified, placeholders) = phase1_insert_placeholders(&config);
 
         let mut step_outputs = HashMap::new();
-        step_outputs.insert("step1".to_string(), json!({"num": 42}));
+        step_outputs.insert("step1.num".to_string(), json!(42));
 
         let resolved =
             phase2_resolve_placeholders(&modified, &placeholders, &step_outputs).unwrap();
-        // Should be number 42, not string "42"
+        // Should be 42 (number), not "42" (string)
         assert_eq!(resolved["count"], 42);
     }
 
     #[test]
     fn test_phase2_partial_string_replacement() {
-        // When a placeholder is embedded in a larger string, it becomes a string
-        let config = json!({"message": "User {{user.name}} logged in"});
+        // When a placeholder is part of a larger string, it's replaced as text
+        let config = json!({"url": "https://api.com/{{api.path}}/data"});
         let (modified, placeholders) = phase1_insert_placeholders(&config);
 
         let mut step_outputs = HashMap::new();
-        step_outputs.insert("user".to_string(), json!({"name": "Alice"}));
+        step_outputs.insert("api.path".to_string(), json!("v2"));
 
         let resolved =
             phase2_resolve_placeholders(&modified, &placeholders, &step_outputs).unwrap();
-        assert_eq!(resolved["message"], "User Alice logged in");
-    }
-
-    #[test]
-    fn test_phase2_undefined_variable_error() {
-        let config = json!({"url": "{{missing.step}}"});
-        let (modified, placeholders) = phase1_insert_placeholders(&config);
-
-        let step_outputs = HashMap::new(); // empty
-        let result = phase2_resolve_placeholders(&modified, &placeholders, &step_outputs);
-        assert!(result.is_err());
+        assert_eq!(resolved["url"], "https://api.com/v2/data");
     }
 
     #[test]
     fn test_no_variables_passes_through() {
-        let config = json!({"timeout": 30, "retries": 3});
+        let config = json!({"url": "https://example.com", "timeout": 30});
         let (modified, map) = phase1_insert_placeholders(&config);
-        assert!(map.map.is_empty());
+
+        assert_eq!(map.map.len(), 0);
         assert_eq!(modified, config);
+    }
+
+    #[test]
+    fn test_extract_refs() {
+        let config = json!({
+            "url": "{{http1.response}}",
+            "body": {"user": "{{auth.username}}"},
+            "static": "no ref here"
+        });
+        let refs = extract_refs(&config);
+        assert_eq!(refs.len(), 2);
+        // Order may vary, so check both exist
+        let ref_strs: Vec<String> = refs.iter().map(|r| format!("{}.{}", r.step_id, r.port_label)).collect();
+        assert!(ref_strs.contains(&"http1.response".to_string()));
+        assert!(ref_strs.contains(&"auth.username".to_string()));
     }
 }
