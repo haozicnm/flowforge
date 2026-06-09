@@ -1,177 +1,73 @@
-/// FlowForge theme system — inspired by AppFlowy's layered approach.
+/// FlowForge Design System — Figma Specs
 ///
-/// AppTheme (color tokens) → ColorScheme → ThemeData + FlowForgeThemeExtension
+/// Following AppFlowy pattern: static const colors → theme → extension.
 library;
 
 import 'package:flutter/material.dart';
 
-/// Semantic color tokens (light/dark).
-class FlowForgeColors {
-  // Brand
-  static const Color primary = Color(0xFF00B4D8);
-  static const Color primaryDark = Color(0xFF0096B7);
-
-  // Surface
-  static const Color surfaceLight = Color(0xFFFFFFFF);
-  static const Color surfaceDark = Color(0xFF1A1A2E);
-  static const Color sidebarLight = Color(0xFFF7F8FA);
-  static const Color sidebarDark = Color(0xFF16213E);
-
-  // Text
-  static const Color textPrimary = Color(0xFF1A1A1A);
-  static const Color textSecondary = Color(0xFF6B7280);
-  static const Color textHint = Color(0xFF9CA3AF);
-
-  // Interactive
-  static const Color hoverLight = Color(0xFFF3F4F6);
-  static const Color hoverDark = Color(0xFF2D2D4A);
-
-  // Status
-  static const Color success = Color(0xFF10B981);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color error = Color(0xFFEF4444);
-
-  // Node palette
-  static const Color nodeNetwork = Color(0xFF3B82F6);
-  static const Color nodeFile = Color(0xFF8B5CF6);
-  static const Color nodeLogic = Color(0xFFF59E0B);
-  static const Color nodeSystem = Color(0xFF6B7280);
+/// Brand colors.
+abstract class FlowForgeColors {
+  static const brand = Color(0xFF00B4D8);
+  static const brandLight = Color(0xFF90E0EF);
+  static const brandDark = Color(0xFF0077B6);
+  static const surface = Color(0xFFF8F9FA);
+  static const surfaceDark = Color(0xFF1A1A2E);
+  static const textPrimary = Color(0xFF212529);
+  static const textSecondary = Color(0xFF6C757D);
+  static const border = Color(0xFFDEE2E6);
+  static const success = Color(0xFF28A745);
+  static const warning = Color(0xFFFFC107);
+  static const error = Color(0xFFDC3545);
 }
 
-/// Build light theme.
-ThemeData buildLightTheme() {
-  const colors = FlowForgeColors;
-  final colorScheme = ColorScheme.light(
-    primary: colors.primary,
-    onPrimary: Colors.white,
-    surface: colors.surfaceLight,
-    onSurface: colors.textPrimary,
-    error: colors.error,
-    onError: Colors.white,
-  );
-
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: colorScheme,
-    fontFamily: 'Inter',
-    scaffoldBackgroundColor: colors.surfaceLight,
-    dividerColor: Colors.grey.shade200,
-    cardTheme: CardThemeData(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.grey.shade200),
-      ),
-    ),
-    navigationRailTheme: NavigationRailThemeData(
-      backgroundColor: colors.sidebarLight,
-      selectedIconTheme: const IconThemeData(color: colors.primary),
-      unselectedIconTheme: IconThemeData(color: Colors.grey.shade500),
-      indicatorColor: colors.primary.withOpacity(0.1),
-    ),
-    extensions: const [
-      FlowForgeThemeExtension(
-        sidebarBg: colors.sidebarLight,
-        hoverBg: colors.hoverLight,
-        success: colors.success,
-        warning: colors.warning,
-        nodeNetwork: colors.nodeNetwork,
-        nodeFile: colors.nodeFile,
-        nodeLogic: colors.nodeLogic,
-        nodeSystem: colors.nodeSystem,
-      ),
-    ],
-  );
+/// Spacing constants.
+abstract class FlowForgeSpacing {
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 16;
+  static const double lg = 24;
+  static const double xl = 32;
+  static const double xxl = 48;
 }
 
-/// Build dark theme.
-ThemeData buildDarkTheme() {
-  const colors = FlowForgeColors;
-  final colorScheme = ColorScheme.dark(
-    primary: colors.primary,
-    onPrimary: Colors.white,
-    surface: colors.surfaceDark,
-    onSurface: Colors.white,
-    error: colors.error,
-    onError: Colors.white,
-  );
-
-  return ThemeData(
-    useMaterial3: true,
-    colorScheme: colorScheme,
-    fontFamily: 'Inter',
-    scaffoldBackgroundColor: colors.surfaceDark,
-    dividerColor: Colors.white.withOpacity(0.1),
-    cardTheme: CardThemeData(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(8),
-        side: BorderSide(color: Colors.white.withOpacity(0.1)),
-      ),
-    ),
-    navigationRailTheme: NavigationRailThemeData(
-      backgroundColor: colors.sidebarDark,
-      selectedIconTheme: const IconThemeData(color: colors.primary),
-      unselectedIconTheme: IconThemeData(color: Colors.grey.shade600),
-      indicatorColor: colors.primary.withOpacity(0.15),
-    ),
-    extensions: const [
-      FlowForgeThemeExtension(
-        sidebarBg: colors.sidebarDark,
-        hoverBg: colors.hoverDark,
-        success: colors.success,
-        warning: colors.warning,
-        nodeNetwork: colors.nodeNetwork,
-        nodeFile: colors.nodeFile,
-        nodeLogic: colors.nodeLogic,
-        nodeSystem: colors.nodeSystem,
-      ),
-    ],
-  );
+/// Border radius constants.
+abstract class FlowForgeRadius {
+  static const double sm = 4;
+  static const double md = 8;
+  static const double lg = 12;
+  static const double xl = 16;
 }
 
-/// Extension theme for FlowForge-specific semantic colors.
+/// AppFlowy-style theme extension.
 class FlowForgeThemeExtension extends ThemeExtension<FlowForgeThemeExtension> {
-  final Color sidebarBg;
-  final Color hoverBg;
-  final Color success;
-  final Color warning;
-  final Color nodeNetwork;
-  final Color nodeFile;
-  final Color nodeLogic;
-  final Color nodeSystem;
+  final Color brandColor;
+  final Color surfaceColor;
+  final Color borderColor;
+  final double sidebarWidth;
+  final double topBarHeight;
 
   const FlowForgeThemeExtension({
-    required this.sidebarBg,
-    required this.hoverBg,
-    required this.success,
-    required this.warning,
-    required this.nodeNetwork,
-    required this.nodeFile,
-    required this.nodeLogic,
-    required this.nodeSystem,
+    required this.brandColor,
+    required this.surfaceColor,
+    required this.borderColor,
+    this.sidebarWidth = 220,
+    this.topBarHeight = 52,
   });
 
   @override
   FlowForgeThemeExtension copyWith({
-    Color? sidebarBg,
-    Color? hoverBg,
-    Color? success,
-    Color? warning,
-    Color? nodeNetwork,
-    Color? nodeFile,
-    Color? nodeLogic,
-    Color? nodeSystem,
+    Color? brandColor,
+    Color? surfaceColor,
+    Color? borderColor,
+    double? sidebarWidth,
+    double? topBarHeight,
   }) {
     return FlowForgeThemeExtension(
-      sidebarBg: sidebarBg ?? this.sidebarBg,
-      hoverBg: hoverBg ?? this.hoverBg,
-      success: success ?? this.success,
-      warning: warning ?? this.warning,
-      nodeNetwork: nodeNetwork ?? this.nodeNetwork,
-      nodeFile: nodeFile ?? this.nodeFile,
-      nodeLogic: nodeLogic ?? this.nodeLogic,
-      nodeSystem: nodeSystem ?? this.nodeSystem,
+      brandColor: brandColor ?? this.brandColor,
+      surfaceColor: surfaceColor ?? this.surfaceColor,
+      borderColor: borderColor ?? this.borderColor,
+      sidebarWidth: sidebarWidth ?? this.sidebarWidth,
+      topBarHeight: topBarHeight ?? this.topBarHeight,
     );
   }
 
@@ -182,14 +78,51 @@ class FlowForgeThemeExtension extends ThemeExtension<FlowForgeThemeExtension> {
   ) {
     if (other is! FlowForgeThemeExtension) return this;
     return FlowForgeThemeExtension(
-      sidebarBg: Color.lerp(sidebarBg, other.sidebarBg, t)!,
-      hoverBg: Color.lerp(hoverBg, other.hoverBg, t)!,
-      success: Color.lerp(success, other.success, t)!,
-      warning: Color.lerp(warning, other.warning, t)!,
-      nodeNetwork: Color.lerp(nodeNetwork, other.nodeNetwork, t)!,
-      nodeFile: Color.lerp(nodeFile, other.nodeFile, t)!,
-      nodeLogic: Color.lerp(nodeLogic, other.nodeLogic, t)!,
-      nodeSystem: Color.lerp(nodeSystem, other.nodeSystem, t)!,
+      brandColor: Color.lerp(brandColor, other.brandColor, t)!,
+      surfaceColor: Color.lerp(surfaceColor, other.surfaceColor, t)!,
+      borderColor: Color.lerp(borderColor, other.borderColor, t)!,
+      sidebarWidth: sidebarWidth,
+      topBarHeight: topBarHeight,
     );
   }
+}
+
+/// Light theme.
+ThemeData buildLightTheme() {
+  return ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.light,
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: FlowForgeColors.brand,
+      brightness: Brightness.light,
+    ),
+    scaffoldBackgroundColor: FlowForgeColors.surface,
+    extensions: const [
+      FlowForgeThemeExtension(
+        brandColor: FlowForgeColors.brand,
+        surfaceColor: FlowForgeColors.surface,
+        borderColor: FlowForgeColors.border,
+      ),
+    ],
+  );
+}
+
+/// Dark theme.
+ThemeData buildDarkTheme() {
+  return ThemeData(
+    useMaterial3: true,
+    brightness: Brightness.dark,
+    colorScheme: ColorScheme.fromSeed(
+      seedColor: FlowForgeColors.brand,
+      brightness: Brightness.dark,
+    ),
+    scaffoldBackgroundColor: FlowForgeColors.surfaceDark,
+    extensions: const [
+      FlowForgeThemeExtension(
+        brandColor: FlowForgeColors.brandLight,
+        surfaceColor: FlowForgeColors.surfaceDark,
+        borderColor: Color(0xFF333333),
+      ),
+    ],
+  );
 }

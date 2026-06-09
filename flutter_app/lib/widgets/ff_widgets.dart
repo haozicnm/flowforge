@@ -1,23 +1,26 @@
-/// Reusable FlowForge widgets — inspired by AppFlowy's flowy_infra_ui.
+/// FlowForge Reusable Widget Library (ff_widgets)
+///
+/// AppFlowy pattern: every visual component is a reusable widget.
 library;
 
 import 'package:flutter/material.dart';
+import '../theme/flowforge_theme.dart';
 
-/// Standard button with icon + text + hover state.
+/// FfButton — AppFlowy FlowyHover pattern.
 class FfButton extends StatefulWidget {
-  final String text;
-  final IconData? icon;
+  final Widget Function(BuildContext context, bool isHovering) builder;
   final VoidCallback? onTap;
-  final bool selected;
-  final bool compact;
+  final bool isSelected;
+  final BorderRadius? radius;
+  final Color? hoverColor;
 
   const FfButton({
     super.key,
-    required this.text,
-    this.icon,
+    required this.builder,
     this.onTap,
-    this.selected = false,
-    this.compact = false,
+    this.isSelected = false,
+    this.radius,
+    this.hoverColor,
   });
 
   @override
@@ -25,57 +28,46 @@ class FfButton extends StatefulWidget {
 }
 
 class _FfButtonState extends State<FfButton> {
-  bool _hovered = false;
+  bool _isHovering = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bgColor = widget.selected
-        ? theme.colorScheme.primary.withOpacity(0.1)
-        : _hovered
-            ? theme.hoverBg
-            : Colors.transparent;
+    final ext = theme.extension<FlowForgeThemeExtension>()!;
+    final radius = widget.radius ?? BorderRadius.circular(FlowForgeRadius.md);
+    final hoverColor =
+        widget.hoverColor ?? ext.brandColor.withValues(alpha: 0.05);
 
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
       child: GestureDetector(
         onTap: widget.onTap,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: EdgeInsets.symmetric(
-            horizontal: widget.compact ? 8 : 12,
-            vertical: widget.compact ? 4 : 8,
-          ),
+          duration: const Duration(milliseconds: 100),
           decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(6),
+            color: widget.isSelected
+                ? ext.brandColor.withValues(alpha: 0.1)
+                : _isHovering
+                    ? hoverColor
+                    : Colors.transparent,
+            borderRadius: radius,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.icon != null) ...[
-                Icon(widget.icon, size: 18, color: theme.colorScheme.onSurface),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                widget.text,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: widget.selected ? FontWeight.w600 : FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
+          child: widget.builder(context, _isHovering),
         ),
       ),
     );
   }
 }
 
-/// Standard text with theme styling.
+/// FfText — AppFlowy FlowyText pattern.
 class FfText extends StatelessWidget {
   final String text;
   final TextStyle? style;
+  final Color? color;
+  final double? fontSize;
+  final FontWeight? fontWeight;
   final int? maxLines;
   final TextOverflow? overflow;
 
@@ -83,6 +75,9 @@ class FfText extends StatelessWidget {
     this.text, {
     super.key,
     this.style,
+    this.color,
+    this.fontSize,
+    this.fontWeight,
     this.maxLines,
     this.overflow,
   });
@@ -91,46 +86,97 @@ class FfText extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       text,
-      style: style ?? Theme.of(context).textTheme.bodyMedium,
+      style: (style ?? const TextStyle()).copyWith(
+        color: color,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+      ),
       maxLines: maxLines,
-      overflow: overflow,
+      overflow: overflow ?? TextOverflow.ellipsis,
     );
   }
 }
 
-/// Themed divider.
+/// FfDivider — thin, consistent dividers.
 class FfDivider extends StatelessWidget {
-  const FfDivider({super.key});
+  final Axis direction;
+  final double? length;
+  final Color? color;
+
+  const FfDivider({
+    super.key,
+    this.direction = Axis.horizontal,
+    this.length,
+    this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Divider(
-      height: 1,
-      thickness: 1,
-      color: Theme.of(context).dividerColor,
+    final theme = Theme.of(context);
+    final ext = theme.extension<FlowForgeThemeExtension>()!;
+    final dividerColor = color ?? ext.borderColor;
+
+    if (direction == Axis.horizontal) {
+      return Container(
+        height: 1,
+        width: length ?? double.infinity,
+        color: dividerColor,
+      );
+    }
+    return Container(
+      width: 1,
+      height: length ?? double.infinity,
+      color: dividerColor,
     );
   }
 }
 
-/// Hover state wrapper.
+/// FfHover — FlowyHover for transparent hover effect.
 class FfHover extends StatefulWidget {
-  final Widget Function(BuildContext context, bool hovered) builder;
+  final Widget child;
+  final VoidCallback? onTap;
+  final Color? hoverColor;
+  final BorderRadius? borderRadius;
 
-  const FfHover({super.key, required this.builder});
+  const FfHover({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.hoverColor,
+    this.borderRadius,
+  });
 
   @override
   State<FfHover> createState() => _FfHoverState();
 }
 
 class _FfHoverState extends State<FfHover> {
-  bool _hovered = false;
+  bool _isHovering = false;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ext = theme.extension<FlowForgeThemeExtension>()!;
+    final hoverColor =
+        widget.hoverColor ?? ext.brandColor.withValues(alpha: 0.05);
+
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: widget.builder(context, _hovered),
+      cursor:
+          widget.onTap != null ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: (_) => setState(() => _isHovering = true),
+      onExit: (_) => setState(() => _isHovering = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          decoration: BoxDecoration(
+            color: _isHovering ? hoverColor : Colors.transparent,
+            borderRadius:
+                widget.borderRadius ?? BorderRadius.circular(FlowForgeRadius.md),
+          ),
+          child: widget.child,
+        ),
+      ),
     );
   }
 }

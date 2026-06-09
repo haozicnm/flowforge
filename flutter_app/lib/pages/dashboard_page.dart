@@ -1,54 +1,111 @@
-/// Dashboard page — the "home" screen showing all workflows.
-///
-/// Rule: This is the entry point, NOT a blank canvas.
-/// Uses BLoC for state (like AppFlowy's pattern).
+/// Dashboard page — AppFlowy pattern with reusable widgets.
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
-
 import '../api/flowforge_api.dart';
-import '../bloc/workspace_bloc.dart';
 import '../theme/flowforge_theme.dart';
 import '../widgets/ff_widgets.dart';
 
-class DashboardPage extends StatelessWidget {
-  const DashboardPage({super.key});
+class DashboardPage extends StatefulWidget {
+  final FlowForgeApi api;
+
+  const DashboardPage({super.key, required this.api});
+
+  @override
+  State<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends State<DashboardPage> {
+  List<Workflow> _workflows = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWorkflows();
+  }
+
+  Future<void> _loadWorkflows() async {
+    try {
+      final workflows = await widget.api.listWorkflows();
+      setState(() {
+        _workflows = workflows;
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final ext = theme.extension<FlowForgeThemeExtension>()!;
 
-    return BlocBuilder<WorkspaceBloc, WorkspaceState>(
-      builder: (context, state) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.all(FlowForgeSpacing.lg),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top bar
+          _buildTopBar(theme, ext),
+          const SizedBox(height: FlowForgeSpacing.lg),
+
+          // Content
+          Expanded(child: _buildContent(theme, ext)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar(ThemeData theme, FlowForgeThemeExtension ext) {
+    return SizedBox(
+      height: ext.topBarHeight,
+      child: Row(
+        children: [
+          FfText(
+            '我的工作流',
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: theme.colorScheme.onSurface,
+          ),
+          const Spacer(),
+          _buildNewWorkflowButton(ext),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNewWorkflowButton(FlowForgeThemeExtension ext) {
+    return FfButton(
+      onTap: () {
+        // TODO: create new workflow
+      },
+      builder: (context, isHovering) {
+        return Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: FlowForgeSpacing.md,
+            vertical: FlowForgeSpacing.sm,
+          ),
+          decoration: BoxDecoration(
+            color: isHovering
+                ? ext.brandColor.withValues(alpha: 0.8)
+                : ext.brandColor,
+            borderRadius: BorderRadius.circular(FlowForgeRadius.md),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // ── Header ──
-              Row(
-                children: [
-                  Icon(Icons.dashboard, color: theme.colorScheme.primary),
-                  const SizedBox(width: 12),
-                  Text(
-                    '我的工作流',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const Spacer(),
-                  FilledButton.icon(
-                    onPressed: () {
-                      // TODO: create new workflow dialog
-                    },
-                    icon: const Icon(Icons.add),
-                    label: const Text('新建工作流'),
-                  ),
-                ],
+              Icon(Icons.add, size: 16, color: Colors.white),
+              SizedBox(width: FlowForgeSpacing.xs),
+              FfText(
+                '新建工作流',
+                fontSize: 13,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
               ),
-              const SizedBox(height: 24),
-
-              // ── Content ──
-              Expanded(child: _buildContent(context, state, theme)),
             ],
           ),
         );
@@ -56,161 +113,142 @@ class DashboardPage extends StatelessWidget {
     );
   }
 
-  Widget _buildContent(
-    BuildContext context,
-    WorkspaceState state,
-    ThemeData theme,
-  ) {
-    if (state.loading) {
+  Widget _buildContent(ThemeData theme, FlowForgeThemeExtension ext) {
+    if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (state.error != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline,
-                size: 48, color: theme.colorScheme.error),
-            const SizedBox(height: 16),
-            Text('连接服务器失败', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(state.error!, style: theme.textTheme.bodyMedium),
-            const SizedBox(height: 16),
-            OutlinedButton(
-              onPressed: () => context
-                  .read<WorkspaceBloc>()
-                  .add(const WorkspaceEvent.loadWorkflows()),
-              child: const Text('重试'),
-            ),
-          ],
-        ),
-      );
+    if (_error != null) {
+      return _buildError(theme);
     }
 
-    if (state.workflows.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.auto_awesome_outlined,
-                size: 64,
-                color: theme.colorScheme.primary.withOpacity(0.5)),
-            const SizedBox(height: 16),
-            Text('还没有工作流', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              '点击"新建工作流"开始自动化之旅',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
-              ),
-            ),
-          ],
-        ),
-      );
+    if (_workflows.isEmpty) {
+      return _buildEmpty(theme, ext);
     }
 
-    // ── Workflow grid ──
+    return _buildWorkflowGrid(theme);
+  }
+
+  Widget _buildError(ThemeData theme) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline,
+              size: 48, color: theme.colorScheme.error),
+          const SizedBox(height: FlowForgeSpacing.md),
+          FfText('连接服务器失败',
+              fontSize: 18, fontWeight: FontWeight.w600),
+          const SizedBox(height: FlowForgeSpacing.sm),
+          FfText(_error!, fontSize: 13),
+          const SizedBox(height: FlowForgeSpacing.md),
+          FfButton(
+            onTap: () {
+              setState(() {
+                _loading = true;
+                _error = null;
+              });
+              _loadWorkflows();
+            },
+            builder: (context, _) => const FfText('重试'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmpty(ThemeData theme, FlowForgeThemeExtension ext) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.workspaces_outlined,
+              size: 64,
+              color: ext.brandColor.withValues(alpha: 0.5)),
+          const SizedBox(height: FlowForgeSpacing.md),
+          FfText('还没有工作流',
+              fontSize: 18, fontWeight: FontWeight.w600),
+          const SizedBox(height: FlowForgeSpacing.sm),
+          FfText(
+            '点击"新建工作流"开始自动化之旅',
+            fontSize: 13,
+            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWorkflowGrid(ThemeData theme) {
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 320,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
+        maxCrossAxisExtent: 300,
+        mainAxisSpacing: FlowForgeSpacing.md,
+        crossAxisSpacing: FlowForgeSpacing.md,
         childAspectRatio: 1.6,
       ),
-      itemCount: state.workflows.length,
+      itemCount: _workflows.length,
       itemBuilder: (context, index) {
-        return _WorkflowCard(workflow: state.workflows[index]);
+        return _WorkflowCard(workflow: _workflows[index]);
       },
     );
   }
 }
 
-/// A single workflow card in the dashboard grid.
-class _WorkflowCard extends StatefulWidget {
+/// Workflow card with FfHover.
+class _WorkflowCard extends StatelessWidget {
   final Workflow workflow;
 
   const _WorkflowCard({required this.workflow});
 
   @override
-  State<_WorkflowCard> createState() => _WorkflowCardState();
-}
-
-class _WorkflowCardState extends State<_WorkflowCard> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final wf = widget.workflow;
+    final ext = theme.extension<FlowForgeThemeExtension>()!;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: Card(
-        elevation: _hovered ? 2 : 0,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () {
-            context
-                .read<WorkspaceBloc>()
-                .add(WorkspaceEvent.selectWorkflow(wf.id));
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    return FfHover(
+      onTap: () {
+        // TODO: navigate to editor
+      },
+      borderRadius: BorderRadius.circular(FlowForgeRadius.lg),
+      child: Container(
+        padding: const EdgeInsets.all(FlowForgeSpacing.md),
+        decoration: BoxDecoration(
+          border: Border.all(color: ext.borderColor),
+          borderRadius: BorderRadius.circular(FlowForgeRadius.lg),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Icon(Icons.play_circle_outline,
-                        color: theme.colorScheme.primary, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        wf.name,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    PopupMenuButton<String>(
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                            value: 'edit', child: Text('编辑')),
-                        const PopupMenuItem(
-                            value: 'duplicate', child: Text('复制')),
-                        const PopupMenuItem(
-                            value: 'delete', child: Text('删除')),
-                      ],
-                      onSelected: (value) {
-                        // TODO: handle menu actions
-                      },
-                      icon: const Icon(Icons.more_vert, size: 18),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                if (wf.description != null)
-                  Text(
-                    wf.description!,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.6),
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                const SizedBox(height: 8),
-                Text(
-                  _formatDate(wf.createdAt),
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.4),
+                Icon(Icons.play_circle_outline,
+                    color: ext.brandColor, size: 18),
+                const SizedBox(width: FlowForgeSpacing.sm),
+                Expanded(
+                  child: FfText(
+                    workflow.name,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
             ),
-          ),
+            const Spacer(),
+            if (workflow.description != null)
+              FfText(
+                workflow.description!,
+                fontSize: 12,
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                maxLines: 2,
+              ),
+            const SizedBox(height: FlowForgeSpacing.sm),
+            FfText(
+              _formatDate(workflow.createdAt),
+              fontSize: 11,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
+            ),
+          ],
         ),
       ),
     );
