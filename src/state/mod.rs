@@ -18,7 +18,7 @@ pub struct AppState {
     pub storage: Arc<WorkflowStorage>,
 
     /// Server configuration.
-    pub config: ServerConfig,
+    pub _config: ServerConfig,
 }
 
 /// Server configuration.
@@ -47,7 +47,7 @@ impl AppState {
         Self {
             node_registry: Arc::new(NodeRegistry::new()),
             storage: Arc::new(storage),
-            config,
+            _config: config,
         }
     }
 }

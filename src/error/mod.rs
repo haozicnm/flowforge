@@ -6,6 +6,7 @@ use thiserror::Error;
 
 /// Top-level error type for all FlowForge operations.
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum FlowError {
     // ── Workflow errors ──
     #[error("Workflow not found: {0}")]

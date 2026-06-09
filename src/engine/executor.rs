@@ -58,11 +58,11 @@ impl ExecutionState {
 /// Execution event for real-time UI updates.
 #[derive(Debug, Clone)]
 pub enum ExecutionEvent {
-    NodeStarted { node_id: String },
-    NodeCompleted { node_id: String, outputs: HashMap<String, serde_json::Value> },
-    NodeFailed { node_id: String, error: String },
+    NodeStarted { _node_id: String },
+    NodeCompleted { _node_id: String, _outputs: HashMap<String, serde_json::Value> },
+    NodeFailed { _node_id: String, _error: String },
     WorkflowCompleted,
-    WorkflowFailed { error: String },
+    _WorkflowFailed { _error: String },
 }
 
 /// Workflow executor.
@@ -104,7 +104,7 @@ impl Executor {
                 let mut s = state.write().await;
                 s.running.push(node_id.clone());
             }
-            self.send_event(&event_tx, ExecutionEvent::NodeStarted { node_id: node_id.clone() }).await;
+            self.send_event(&event_tx, ExecutionEvent::NodeStarted { _node_id: node_id.clone() }).await;
 
             // Resolve variables in config
             let step_outputs = state.read().await.flat_outputs();
@@ -129,8 +129,8 @@ impl Executor {
                     self.send_event(
                         &event_tx,
                         ExecutionEvent::NodeCompleted {
-                            node_id: node_id.clone(),
-                            outputs,
+                            _node_id: node_id.clone(),
+                            _outputs: outputs,
                         },
                     )
                     .await;
@@ -143,8 +143,8 @@ impl Executor {
                     self.send_event(
                         &event_tx,
                         ExecutionEvent::NodeFailed {
-                            node_id: node_id.clone(),
-                            error: e.to_string(),
+                            _node_id: node_id.clone(),
+                            _error: e.to_string(),
                         },
                     )
                     .await;

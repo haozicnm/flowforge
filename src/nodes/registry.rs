@@ -63,6 +63,7 @@ impl NodeRegistry {
     }
 
     /// Check if a node type is registered.
+    #[allow(dead_code)]
     pub fn has(&self, type_name: &str) -> bool {
         self.executors
             .read()

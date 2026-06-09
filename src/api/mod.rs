@@ -18,7 +18,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::engine::workflow::{Edge, Node, Workflow};
-use crate::error::FlowError;
 use crate::state::AppState;
 
 /// Health check response.

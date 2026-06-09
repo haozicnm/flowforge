@@ -36,7 +36,7 @@ pub struct ResolvedRef {
     /// The port label (sub key).
     pub port_label: String,
     /// The placeholder that replaced this reference in the config.
-    pub placeholder: String,
+    pub _placeholder: String,
 }
 
 /// The result of Phase 1 (placeholder insertion).
@@ -110,7 +110,7 @@ fn extract_refs_recursive(value: &serde_json::Value, refs: &mut Vec<ResolvedRef>
                     refs.push(ResolvedRef {
                         step_id: parts[0].to_string(),
                         port_label: parts[1].to_string(),
-                        placeholder: String::new(),
+                        _placeholder: String::new(),
                     });
                 }
             }
@@ -181,7 +181,6 @@ fn resolve_recursive(
     match value {
         serde_json::Value::String(s) => {
             let mut result = s.clone();
-            let mut is_pure_placeholder = false;
 
             for (placeholder, (step_id, port_label)) in &placeholders.map {
                 if result.contains(placeholder.as_str()) {
@@ -194,7 +193,6 @@ fn resolve_recursive(
 
                     // If the string is EXACTLY one placeholder, preserve the raw type
                     if result == *placeholder {
-                        is_pure_placeholder = true;
                         return Ok(resolved_value.clone());
                     }
 
@@ -207,9 +205,6 @@ fn resolve_recursive(
                 }
             }
 
-            if is_pure_placeholder {
-                unreachable!("handled above");
-            }
             Ok(serde_json::Value::String(result))
         }
         serde_json::Value::Array(arr) => {
