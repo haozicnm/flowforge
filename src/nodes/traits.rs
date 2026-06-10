@@ -13,6 +13,27 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::FlowResult;
 use crate::engine::workflow::Node;
+use crate::webbridge::WebBridgeState;
+
+/// Runtime context passed to node execute().
+/// Carries shared services that nodes may need (e.g., WebBridge for browser automation).
+#[derive(Clone)]
+pub struct NodeContext {
+    /// WebBridge state for browser automation nodes. None if not configured.
+    pub webbridge: Option<WebBridgeState>,
+}
+
+impl NodeContext {
+    /// Create a context with no services (for non-browser nodes).
+    pub fn empty() -> Self {
+        Self { webbridge: None }
+    }
+
+    /// Create a context with WebBridge support.
+    pub fn with_webbridge(webbridge: WebBridgeState) -> Self {
+        Self { webbridge: Some(webbridge) }
+    }
+}
 
 /// Definition of a node type (metadata for the UI and registry).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +96,7 @@ pub trait NodeExecutor: Send + Sync {
     async fn execute(
         &self,
         node: &Node,
+        ctx: &NodeContext,
         resolved_config: serde_json::Value,
         inputs: std::collections::HashMap<String, serde_json::Value>,
     ) -> FlowResult<std::collections::HashMap<String, serde_json::Value>>;

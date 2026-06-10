@@ -25,7 +25,7 @@ impl NodeExecutor for WebhookNode {
         }
     }
 
-    async fn execute(&self, _node: &Node, _config: serde_json::Value, _inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
+    async fn execute(&self, _node: &Node, _ctx: &crate::nodes::traits::NodeContext, _config: serde_json::Value, _inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
         let mut out = HashMap::new();
         out.insert("body".to_string(), serde_json::json!({}));
         out.insert("headers".to_string(), serde_json::json!({}));

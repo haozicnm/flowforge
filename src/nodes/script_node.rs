@@ -22,7 +22,7 @@ impl NodeExecutor for ScriptNode {
         }
     }
 
-    async fn execute(&self, _node: &Node, config: serde_json::Value, inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
+    async fn execute(&self, _node: &Node, _ctx: &crate::nodes::traits::NodeContext, config: serde_json::Value, inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
         let script = config["script"].as_str().ok_or_else(|| FlowError::InvalidNodeConfig {
             node_id: "script".to_string(), detail: "script is required".to_string(),
         })?;

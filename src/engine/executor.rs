@@ -15,6 +15,8 @@ use crate::engine::resolver;
 use crate::engine::workflow::{Edge, Node, Workflow};
 use crate::error::{FlowError, FlowResult};
 use crate::nodes::registry::NodeRegistry;
+use crate::nodes::traits::NodeContext;
+use crate::webbridge::WebBridgeState;
 
 /// Execution state for a single workflow run.
 #[derive(Debug, Clone)]
@@ -68,11 +70,17 @@ pub enum ExecutionEvent {
 /// Workflow executor.
 pub struct Executor {
     registry: Arc<NodeRegistry>,
+    webbridge: Option<WebBridgeState>,
 }
 
 impl Executor {
     pub fn new(registry: Arc<NodeRegistry>) -> Self {
-        Self { registry }
+        Self { registry, webbridge: None }
+    }
+
+    pub fn with_webbridge(mut self, webbridge: WebBridgeState) -> Self {
+        self.webbridge = Some(webbridge);
+        self
     }
 
     /// Execute a workflow.
@@ -119,7 +127,11 @@ impl Executor {
 
             // Execute the node
             let executor = self.registry.get_executor(&node.node_type)?;
-            match executor.execute(node, resolved_config, inputs).await {
+            let ctx = match &self.webbridge {
+                Some(wb) => NodeContext::with_webbridge(wb.clone()),
+                None => NodeContext::empty(),
+            };
+            match executor.execute(node, &ctx, resolved_config, inputs).await {
                 Ok(outputs) => {
                     let mut s = state.write().await;
                     s.node_outputs.insert(node_id.clone(), outputs.clone());

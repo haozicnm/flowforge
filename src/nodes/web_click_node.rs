@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use crate::error::{FlowError, FlowResult};
 use crate::engine::workflow::Node;
 use crate::nodes::traits::{NodeExecutor, NodeTypeDef, PortDef};
-use super::webbridge::WebBridgeClient;
 
 #[derive(Default)]
 pub struct WebClickNode;
@@ -42,6 +41,7 @@ impl NodeExecutor for WebClickNode {
     async fn execute(
         &self,
         _node: &Node,
+        ctx: &crate::nodes::traits::NodeContext,
         config: serde_json::Value,
         inputs: HashMap<String, serde_json::Value>,
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
@@ -60,11 +60,14 @@ impl NodeExecutor for WebClickNode {
         };
 
         let params = serde_json::json!({ "selector": selector });
-        let client = WebBridgeClient::default();
-        let data = client.send_command(action, params).await
+        let wb = ctx.webbridge.as_ref().ok_or_else(|| FlowError::NodeExecutionFailed {
+            node_id: "web".to_string(),
+            detail: "WebBridge not configured. Browser automation requires a connected Chrome extension.".to_string(),
+        })?;
+        let data = super::webbridge::send_browser_command(wb, action, params).await
             .map_err(|e| FlowError::NodeExecutionFailed {
                 node_id: "web_click".to_string(),
-                detail: e,
+                detail: e.to_string(),
             })?;
 
         // Optional wait after click

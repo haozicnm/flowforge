@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use crate::error::{FlowError, FlowResult};
 use crate::engine::workflow::Node;
 use crate::nodes::traits::{NodeExecutor, NodeTypeDef, PortDef};
-use super::webbridge::WebBridgeClient;
 
 #[derive(Default)]
 pub struct WebScreenshotNode;
@@ -42,8 +41,9 @@ impl NodeExecutor for WebScreenshotNode {
     async fn execute(
         &self,
         _node: &Node,
+        ctx: &crate::nodes::traits::NodeContext,
         config: serde_json::Value,
-        _inputs: HashMap<String, serde_json::Value>,
+        _inputs: HashMap<String, serde_json::Value>
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
         let selector = config["selector"].as_str().unwrap_or("");
         let format = config["format"].as_str().unwrap_or("png");
@@ -53,11 +53,14 @@ impl NodeExecutor for WebScreenshotNode {
             params["selector"] = serde_json::json!(selector);
         }
 
-        let client = WebBridgeClient::default();
-        let data = client.send_command("screenshot", params).await
+        let wb = ctx.webbridge.as_ref().ok_or_else(|| FlowError::NodeExecutionFailed {
+            node_id: "web".to_string(),
+            detail: "WebBridge not configured. Browser automation requires a connected Chrome extension.".to_string(),
+        })?;
+        let data = super::webbridge::send_browser_command(wb, "screenshot", params).await
             .map_err(|e| FlowError::NodeExecutionFailed {
                 node_id: "web_screenshot".to_string(),
-                detail: e,
+                detail: e.to_string(),
             })?;
 
         // data["dataUrl"] contains the base64 image

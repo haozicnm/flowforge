@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use crate::error::{FlowError, FlowResult};
 use crate::engine::workflow::Node;
 use crate::nodes::traits::{NodeExecutor, NodeTypeDef, PortDef};
-use super::webbridge::WebBridgeClient;
 
 #[derive(Default)]
 pub struct WebNavigateNode;
@@ -43,6 +42,7 @@ impl NodeExecutor for WebNavigateNode {
     async fn execute(
         &self,
         _node: &Node,
+        ctx: &crate::nodes::traits::NodeContext,
         config: serde_json::Value,
         inputs: HashMap<String, serde_json::Value>,
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
@@ -60,11 +60,14 @@ impl NodeExecutor for WebNavigateNode {
             "newTab": new_tab
         });
 
-        let client = WebBridgeClient::default();
-        let data = client.send_command("navigate", params).await
+        let wb = ctx.webbridge.as_ref().ok_or_else(|| FlowError::NodeExecutionFailed {
+            node_id: "web".to_string(),
+            detail: "WebBridge not configured. Browser automation requires a connected Chrome extension.".to_string(),
+        })?;
+        let data = super::webbridge::send_browser_command(wb, "navigate", params).await
             .map_err(|e| FlowError::NodeExecutionFailed {
                 node_id: "web_navigate".to_string(),
-                detail: e,
+                detail: e.to_string(),
             })?;
 
         let mut outputs = HashMap::new();

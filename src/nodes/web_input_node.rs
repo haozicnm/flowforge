@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use crate::error::{FlowError, FlowResult};
 use crate::engine::workflow::Node;
 use crate::nodes::traits::{NodeExecutor, NodeTypeDef, PortDef};
-use super::webbridge::WebBridgeClient;
 
 #[derive(Default)]
 pub struct WebInputNode;
@@ -41,6 +40,7 @@ impl NodeExecutor for WebInputNode {
     async fn execute(
         &self,
         _node: &Node,
+        ctx: &crate::nodes::traits::NodeContext,
         config: serde_json::Value,
         inputs: HashMap<String, serde_json::Value>,
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
@@ -58,27 +58,30 @@ impl NodeExecutor for WebInputNode {
         let clear_first = config["clear_first"].as_bool().unwrap_or(true);
         let press_enter = config["press_enter"].as_bool().unwrap_or(false);
 
-        let client = WebBridgeClient::default();
+        let wb = ctx.webbridge.as_ref().ok_or_else(|| FlowError::NodeExecutionFailed {
+            node_id: "web".to_string(),
+            detail: "WebBridge not configured. Browser automation requires a connected Chrome extension.".to_string(),
+        })?;
 
         // Clear field first if requested
         if clear_first {
-            let _ = client.send_command("fill", serde_json::json!({
+            let _ = super::webbridge::send_browser_command(wb, "fill", serde_json::json!({
                 "selector": selector, "content": ""
             })).await;
         }
 
         // Type the text
-        let data = client.send_command("fill", serde_json::json!({
+        let data = super::webbridge::send_browser_command(wb, "fill", serde_json::json!({
             "selector": selector,
             "content": text
         })).await.map_err(|e| FlowError::NodeExecutionFailed {
             node_id: "web_input".to_string(),
-            detail: e,
-        })?;
+            detail: e.to_string(),
+                       })?;
 
         // Press Enter if requested
         if press_enter {
-            let _ = client.send_command("send_keys", serde_json::json!({
+            let _ = super::webbridge::send_browser_command(wb, "send_keys", serde_json::json!({
                 "selector": selector,
                 "keys": "Enter"
             })).await;

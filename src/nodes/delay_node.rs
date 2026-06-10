@@ -22,7 +22,7 @@ impl NodeExecutor for DelayNode {
         }
     }
 
-    async fn execute(&self, _node: &Node, config: serde_json::Value, _inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
+    async fn execute(&self, _node: &Node, _ctx: &crate::nodes::traits::NodeContext, config: serde_json::Value, _inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
         let ms = config["duration_ms"].as_u64().unwrap_or(1000);
         tracing::info!("Delaying {}ms", ms);
         tokio::time::sleep(std::time::Duration::from_millis(ms)).await;

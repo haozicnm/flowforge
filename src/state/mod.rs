@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::engine::storage::WorkflowStorage;
 use crate::nodes::registry::NodeRegistry;
+use crate::webbridge::WebBridgeState;
 
 /// Shared application state.
 #[derive(Clone)]
@@ -16,6 +17,9 @@ pub struct AppState {
 
     /// Workflow persistence.
     pub storage: Arc<WorkflowStorage>,
+
+    /// WebBridge — Chrome extension relay.
+    pub webbridge: WebBridgeState,
 
     /// Server configuration.
     pub _config: ServerConfig,
@@ -47,6 +51,7 @@ impl AppState {
         Self {
             node_registry: Arc::new(NodeRegistry::new()),
             storage: Arc::new(storage),
+            webbridge: WebBridgeState::new(),
             _config: config,
         }
     }

@@ -57,8 +57,9 @@ impl NodeExecutor for ShellNode {
     async fn execute(
         &self,
         node: &Node,
+        _ctx: &crate::nodes::traits::NodeContext,
         config: serde_json::Value,
-        _inputs: HashMap<String, serde_json::Value>,
+        _inputs: HashMap<String, serde_json::Value>
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
         let command = config["command"]
             .as_str()

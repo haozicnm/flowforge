@@ -20,6 +20,21 @@ use serde::{Deserialize, Serialize};
 use crate::engine::workflow::{Edge, Node, Workflow};
 use crate::state::AppState;
 
+/// GET /api/browser/status — check if Chrome extension is connected.
+pub async fn browser_status(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    let connected = state.webbridge.is_connected().await;
+    Json(serde_json::json!({
+        "connected": connected,
+        "message": if connected {
+            "Chrome extension connected"
+        } else {
+            "Chrome extension not connected. Install the WebBridge extension and navigate to a page."
+        }
+    }))
+}
+
 /// Health check response.
 #[derive(Serialize)]
 pub struct HealthResponse {
@@ -142,7 +157,8 @@ pub async fn execute_workflow(
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     let workflow = state.storage.load(&id).map_err(|_| StatusCode::NOT_FOUND)?;
 
-    let executor = crate::engine::executor::Executor::new(state.node_registry.clone());
+    let executor = crate::engine::executor::Executor::new(state.node_registry.clone())
+        .with_webbridge(state.webbridge.clone());
     let result = executor.execute(&workflow, None).await;
 
     match result {

@@ -40,8 +40,9 @@ impl NodeExecutor for TryCatchNode {
     async fn execute(
         &self,
         _node: &Node,
+        _ctx: &crate::nodes::traits::NodeContext,
         _config: serde_json::Value,
-        inputs: HashMap<String, serde_json::Value>,
+        inputs: HashMap<String, serde_json::Value>
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
         let has_error = inputs.contains_key("error");
         let mut outputs = HashMap::new();

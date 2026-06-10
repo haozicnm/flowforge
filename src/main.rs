@@ -8,6 +8,7 @@ mod engine;
 mod error;
 mod nodes;
 mod state;
+mod webbridge;
 
 use axum::{
     routing::{delete, get, post, put},
@@ -50,6 +51,10 @@ async fn main() {
         .route("/api/workflows/:id", delete(api::delete_workflow))
         // Execution
         .route("/api/workflows/:id/execute", post(api::execute_workflow))
+        // WebBridge — browser automation via Chrome extension
+        .route("/api/browser/status", get(api::browser_status))
+        .route("/api/browser/command", post(webbridge::browser_command))
+        .route("/ws/browser", get(webbridge::ws_handler))
         .layer(CorsLayer::permissive())
         .with_state(state)
         .fallback_service(tower_http::services::ServeDir::new(&static_dir));

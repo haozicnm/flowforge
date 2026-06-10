@@ -43,6 +43,7 @@ impl NodeExecutor for DocxReadNode {
     async fn execute(
         &self,
         _node: &Node,
+        _ctx: &crate::nodes::traits::NodeContext,
         config: serde_json::Value,
         inputs: HashMap<String, serde_json::Value>,
     ) -> FlowResult<HashMap<String, serde_json::Value>> {

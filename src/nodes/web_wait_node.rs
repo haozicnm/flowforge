@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use crate::error::{FlowError, FlowResult};
 use crate::engine::workflow::Node;
 use crate::nodes::traits::{NodeExecutor, NodeTypeDef, PortDef};
-use super::webbridge::WebBridgeClient;
 
 #[derive(Default)]
 pub struct WebWaitNode;
@@ -40,8 +39,9 @@ impl NodeExecutor for WebWaitNode {
     async fn execute(
         &self,
         _node: &Node,
+        ctx: &crate::nodes::traits::NodeContext,
         config: serde_json::Value,
-        _inputs: HashMap<String, serde_json::Value>,
+        _inputs: HashMap<String, serde_json::Value>
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
         let timeout_ms = config["timeout_ms"].as_u64().unwrap_or(10000);
         let wait_type = config["wait_type"].as_str().unwrap_or("selector");
@@ -70,8 +70,11 @@ impl NodeExecutor for WebWaitNode {
             }
         };
 
-        let client = WebBridgeClient::default();
-        let found = client.send_command("wait_for", params).await.is_ok();
+        let wb = ctx.webbridge.as_ref().ok_or_else(|| FlowError::NodeExecutionFailed {
+            node_id: "web".to_string(),
+            detail: "WebBridge not configured. Browser automation requires a connected Chrome extension.".to_string(),
+        })?;
+        let found = super::webbridge::send_browser_command(wb, "wait_for", params).await.is_ok();
 
         let mut outputs = HashMap::new();
         outputs.insert("found".to_string(), serde_json::json!(found));

@@ -28,7 +28,7 @@ impl NodeExecutor for LogNode {
         }
     }
 
-    async fn execute(&self, node: &Node, config: serde_json::Value, inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
+    async fn execute(&self, node: &Node, _ctx: &crate::nodes::traits::NodeContext, config: serde_json::Value, inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
         let level = config["level"].as_str().unwrap_or("info");
         // Read message from config, fall back to input
         let msg = config["message"].as_str()
