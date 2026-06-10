@@ -1,6 +1,7 @@
 // FlowForge — Visual Workflow Automation Engine
 //
 // Architecture: Flutter Desktop connects to Rust backend via HTTP.
+// Backend is started separately — this app only connects.
 import 'package:flutter/material.dart';
 import 'api/flowforge_api.dart';
 import 'services/server_manager.dart';
@@ -16,15 +17,9 @@ void main() async {
   final serverManager = ServerManager();
   final externalUrl = const String.fromEnvironment('SERVER_URL');
 
-  try {
-    if (externalUrl.isNotEmpty) {
-      await serverManager.start(externalServerUrl: externalUrl);
-    } else {
-      await serverManager.start();
-    }
-  } catch (e) {
-    debugPrint('Server start failed: \$e');
-  }
+  await serverManager.start(
+    externalServerUrl: externalUrl.isNotEmpty ? externalUrl : null,
+  );
 
   runApp(FlowForgeApp(serverManager: serverManager));
 }
@@ -177,11 +172,5 @@ class _MainShellState extends State<MainShell> {
         );
       },
     );
-  }
-
-  @override
-  void dispose() {
-    widget.serverManager.stop();
-    super.dispose();
   }
 }
