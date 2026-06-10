@@ -81,8 +81,8 @@ class PortDef {
 class WorkflowNode {
   final String id;
   final String type;
-  final String label;
-  final Map<String, dynamic> config;
+  String label;
+  Map<String, dynamic> config;
   final Map<String, double> position;
 
   WorkflowNode({
@@ -90,8 +90,14 @@ class WorkflowNode {
     required this.type,
     this.label = '',
     this.config = const {},
-    this.position = const {'x': 0, 'y': 0},
-  });
+    Map<String, double>? position,
+  }) : position = position ?? {'x': 0, 'y': 0};
+
+  /// Convenience getters/setters for canvas positioning.
+  double get positionX => position['x'] ?? 0;
+  double get positionY => position['y'] ?? 0;
+  set positionX(double v) => position['x'] = v;
+  set positionY(double v) => position['y'] = v;
 
   factory WorkflowNode.fromJson(Map<String, dynamic> json) {
     return WorkflowNode(

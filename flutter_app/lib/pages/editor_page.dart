@@ -1,9 +1,10 @@
-// Editor page — workflow editor with real execution.
+// Editor page — visual canvas + form editing + execution.
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../api/flowforge_api.dart';
 import '../theme/flowforge_theme.dart';
 import '../widgets/ff_widgets.dart';
+import '../widgets/canvas_editor.dart';
 
 class EditorPage extends StatefulWidget {
   final FlowForgeApi api;
@@ -24,13 +25,18 @@ class _EditorPageState extends State<EditorPage> {
   String? _error;
   final _nameController = TextEditingController();
 
-  // Node list editing
   List<WorkflowNode> _nodes = [];
   List<WorkflowEdge> _edges = [];
+  List<NodeTypeDef> _nodeTypes = [];
+
+  // View mode: canvas or form
+  bool _canvasMode = true;
+  String? _selectedNodeId;
 
   @override
   void initState() {
     super.initState();
+    _loadNodeTypes();
     if (widget.workflowId != null) {
       _loadWorkflow(widget.workflowId!);
     }
@@ -44,6 +50,13 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 
+  Future<void> _loadNodeTypes() async {
+    try {
+      final types = await widget.api.nodeTypes();
+      setState(() => _nodeTypes = types);
+    } catch (_) {}
+  }
+
   Future<void> _loadWorkflow(String id) async {
     setState(() { _loading = true; _error = null; });
     try {
@@ -54,6 +67,7 @@ class _EditorPageState extends State<EditorPage> {
         _edges = List.from(wf.edges);
         _nameController.text = wf.name;
         _loading = false;
+        _selectedNodeId = null;
       });
     } catch (e) {
       setState(() { _error = e.toString(); _loading = false; });
@@ -73,7 +87,7 @@ class _EditorPageState extends State<EditorPage> {
       setState(() { _workflow = updated; _isSaving = false; });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已保存')),
+          const SnackBar(content: Text('已保存'), duration: Duration(seconds: 1)),
         );
       }
     } catch (e) {
@@ -89,11 +103,8 @@ class _EditorPageState extends State<EditorPage> {
   Future<void> _execute() async {
     if (_workflow == null) return;
     setState(() { _isExecuting = true; _output = '执行中...'; });
-
     try {
-      // Save first
       await _save();
-      // Then execute
       final result = await widget.api.executeWorkflow(_workflow!.id);
       final buf = StringBuffer();
       if (result.isSuccess) {
@@ -127,8 +138,8 @@ class _EditorPageState extends State<EditorPage> {
 
   void _addNode() {
     final idController = TextEditingController();
-    String selectedType = 'log';
-    
+    String selectedType = _nodeTypes.isNotEmpty ? _nodeTypes.first.typeName : 'log';
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -144,14 +155,11 @@ class _EditorPageState extends State<EditorPage> {
             DropdownButtonFormField<String>(
               value: selectedType,
               decoration: const InputDecoration(labelText: '类型', border: OutlineInputBorder()),
-              items: const [
-                DropdownMenuItem(value: 'log', child: Text('日志输出')),
-                DropdownMenuItem(value: 'delay', child: Text('延时等待')),
-                DropdownMenuItem(value: 'http', child: Text('HTTP 请求')),
-                DropdownMenuItem(value: 'script', child: Text('脚本')),
-                DropdownMenuItem(value: 'shell', child: Text('Shell 命令')),
-              ],
-              onChanged: (v) => selectedType = v ?? 'log',
+              items: _nodeTypes.map((t) => DropdownMenuItem(
+                value: t.typeName,
+                child: Text(t.displayName),
+              )).toList(),
+              onChanged: (v) => selectedType = v ?? selectedType,
             ),
           ],
         ),
@@ -164,7 +172,8 @@ class _EditorPageState extends State<EditorPage> {
                   _nodes.add(WorkflowNode(
                     id: idController.text,
                     type: selectedType,
-                    config: selectedType == 'log' ? {'level': 'info'} : {},
+                    config: selectedType == 'log' ? {'level': 'info', 'message': ''} : {},
+                    position: {'x': 100 + _nodes.length * 220.0, 'y': 100},
                   ));
                 });
                 Navigator.pop(ctx);
@@ -177,11 +186,11 @@ class _EditorPageState extends State<EditorPage> {
     );
   }
 
-  void _removeNode(int index) {
-    final nodeId = _nodes[index].id;
+  void _removeNode(String nodeId) {
     setState(() {
-      _nodes.removeAt(index);
+      _nodes.removeWhere((n) => n.id == nodeId);
       _edges.removeWhere((e) => e.from == nodeId || e.to == nodeId);
+      if (_selectedNodeId == nodeId) _selectedNodeId = null;
     });
   }
 
@@ -201,14 +210,14 @@ class _EditorPageState extends State<EditorPage> {
               DropdownButtonFormField<String>(
                 value: fromNode,
                 decoration: const InputDecoration(labelText: '从', border: OutlineInputBorder()),
-                items: _nodes.map((n) => DropdownMenuItem(value: n.id, child: Text(n.id))).toList(),
+                items: _nodes.map((n) => DropdownMenuItem(value: n.id, child: Text(n.label.isNotEmpty ? n.label : n.id))).toList(),
                 onChanged: (v) => setDialogState(() => fromNode = v ?? fromNode),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: toNode,
                 decoration: const InputDecoration(labelText: '到', border: OutlineInputBorder()),
-                items: _nodes.map((n) => DropdownMenuItem(value: n.id, child: Text(n.id))).toList(),
+                items: _nodes.map((n) => DropdownMenuItem(value: n.id, child: Text(n.label.isNotEmpty ? n.label : n.id))).toList(),
                 onChanged: (v) => setDialogState(() => toNode = v ?? toNode),
               ),
             ],
@@ -251,10 +260,284 @@ class _EditorPageState extends State<EditorPage> {
           Expanded(
             child: Row(
               children: [
-                Expanded(flex: 3, child: _buildEditorPanel(theme, ext)),
+                // Canvas / Form editor
+                Expanded(
+                  flex: 3,
+                  child: _canvasMode ? _buildCanvas(ext) : _buildFormEditor(theme, ext),
+                ),
                 const SizedBox(width: FlowForgeSpacing.md),
-                Expanded(flex: 2, child: _buildOutputPanel(theme, ext)),
+                // Right panel: properties + output
+                Expanded(
+                  flex: 2,
+                  child: Column(
+                    children: [
+                      if (_selectedNodeId != null) ...[
+                        Expanded(child: _buildPropertiesPanel(theme, ext)),
+                        const SizedBox(height: FlowForgeSpacing.md),
+                      ],
+                      Expanded(child: _buildOutputPanel(theme, ext)),
+                    ],
+                  ),
+                ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCanvas(FlowForgeThemeExtension ext) {
+    return Container(
+      decoration: BoxDecoration(
+        color: ext.surfaceColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ext.borderColor),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: CanvasEditor(
+          nodes: _nodes,
+          edges: _edges,
+          nodeTypes: _nodeTypes,
+          selectedNodeId: _selectedNodeId,
+          onNodeSelected: (id) => setState(() => _selectedNodeId = id),
+          onChanged: (nodes, edges) => setState(() {}),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFormEditor(ThemeData theme, FlowForgeThemeExtension ext) {
+    return Container(
+      decoration: BoxDecoration(
+        color: ext.surfaceColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ext.borderColor),
+      ),
+      child: Column(
+        children: [
+          // Nodes header
+          Padding(
+            padding: const EdgeInsets.all(FlowForgeSpacing.md),
+            child: Row(
+              children: [
+                FfText('节点 (${_nodes.length})', fontSize: 12, fontWeight: FontWeight.w600),
+                const Spacer(),
+                FfButton(
+                  onTap: _addNode,
+                  builder: (ctx, _) => const Icon(Icons.add, size: 16),
+                ),
+                const SizedBox(width: 4),
+                FfButton(
+                  onTap: _addEdge,
+                  builder: (ctx, _) => const Icon(Icons.add_link, size: 16),
+                ),
+              ],
+            ),
+          ),
+          const FfDivider(),
+          // Node list
+          Expanded(
+            child: _nodes.isEmpty
+                ? Center(child: FfText('暂无节点', fontSize: 13, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)))
+                : ListView.builder(
+                    itemCount: _nodes.length,
+                    itemBuilder: (ctx, i) => _buildNodeTile(_nodes[i], i, theme, ext),
+                  ),
+          ),
+          // Edges
+          if (_edges.isNotEmpty) ...[
+            const FfDivider(),
+            Padding(
+              padding: const EdgeInsets.all(FlowForgeSpacing.md),
+              child: FfText('连接 (${_edges.length})', fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            ..._edges.map((e) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: FlowForgeSpacing.md, vertical: 2),
+              child: Row(
+                children: [
+                  Expanded(child: FfText('${e.from} → ${e.to}', fontSize: 12)),
+                  GestureDetector(
+                    onTap: () => setState(() => _edges.remove(e)),
+                    child: Icon(Icons.close, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+                  ),
+                ],
+              ),
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNodeTile(WorkflowNode node, int index, ThemeData theme, FlowForgeThemeExtension ext) {
+    return ListTile(
+      dense: true,
+      leading: Icon(_nodeIcon(node.type), size: 18, color: _nodeColor(node.type)),
+      title: FfText(node.label.isNotEmpty ? node.label : node.id, fontSize: 13),
+      subtitle: FfText(node.type, fontSize: 11, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+      trailing: GestureDetector(
+        onTap: () => _removeNode(node.id),
+        child: Icon(Icons.delete_outline, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+      ),
+      selected: _selectedNodeId == node.id,
+      selectedTileColor: ext.brandColor.withValues(alpha: 0.08),
+      onTap: () => setState(() => _selectedNodeId = node.id),
+    );
+  }
+
+  Widget _buildPropertiesPanel(ThemeData theme, FlowForgeThemeExtension ext) {
+    final node = _nodes.where((n) => n.id == _selectedNodeId).firstOrNull;
+    if (node == null) return const SizedBox.shrink();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: ext.surfaceColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ext.borderColor),
+      ),
+      padding: const EdgeInsets.all(FlowForgeSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_nodeIcon(node.type), size: 18, color: _nodeColor(node.type)),
+              const SizedBox(width: 8),
+              Expanded(child: FfText(node.id, fontSize: 14, fontWeight: FontWeight.w600)),
+              GestureDetector(
+                onTap: () => _removeNode(node.id),
+                child: Icon(Icons.delete_outline, size: 16, color: Colors.red.withValues(alpha: 0.7)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Label field
+          TextField(
+            controller: TextEditingController(text: node.label),
+            decoration: const InputDecoration(labelText: '标签', border: OutlineInputBorder(), isDense: true),
+            onChanged: (v) => node.label = v,  // WorkflowNode.label needs to be non-final
+          ),
+          const SizedBox(height: 8),
+          // Config editor
+          FfText('配置 (JSON)', fontSize: 12, fontWeight: FontWeight.w600),
+          const SizedBox(height: 4),
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: ext.borderColor),
+              ),
+              padding: const EdgeInsets.all(8),
+              child: SingleChildScrollView(
+                child: Text(
+                  const JsonEncoder.withIndent('  ').convert(node.config),
+                  style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar(ThemeData theme, FlowForgeThemeExtension ext) {
+    return Row(
+      children: [
+        // Workflow name
+        Expanded(
+          flex: 2,
+          child: TextField(
+            controller: _nameController,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            ),
+          ),
+        ),
+        // View toggle
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: true, icon: Icon(Icons.dashboard, size: 16), label: Text('画布')),
+            ButtonSegment(value: false, icon: Icon(Icons.list, size: 16), label: Text('列表')),
+          ],
+          selected: {_canvasMode},
+          onSelectionChanged: (v) => setState(() => _canvasMode = v.first),
+          style: ButtonStyle(visualDensity: VisualDensity.compact),
+        ),
+        const SizedBox(width: FlowForgeSpacing.md),
+        // Actions
+        FfButton(
+          onTap: _isSaving ? null : _save,
+          builder: (ctx, hovering) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isSaving)
+                  const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                else
+                  const Icon(Icons.save, size: 16),
+                const SizedBox(width: 4),
+                FfText('保存', fontSize: 12),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        FfButton(
+          onTap: _isExecuting ? null : _execute,
+          builder: (ctx, hovering) => Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_isExecuting)
+                  const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                else
+                  Icon(Icons.play_arrow, size: 16, color: Colors.green),
+                const SizedBox(width: 4),
+                FfText('执行', fontSize: 12),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOutputPanel(ThemeData theme, FlowForgeThemeExtension ext) {
+    return Container(
+      decoration: BoxDecoration(
+        color: ext.surfaceColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ext.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(FlowForgeSpacing.md),
+            child: FfText('执行输出', fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+          const FfDivider(),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(FlowForgeSpacing.md),
+              child: SelectableText(
+                _output.isEmpty ? '尚未执行' : _output,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontFamily: 'monospace',
+                  color: _output.startsWith('❌')
+                      ? Colors.red
+                      : theme.colorScheme.onSurface,
+                ),
+              ),
             ),
           ),
         ],
@@ -281,156 +564,15 @@ class _EditorPageState extends State<EditorPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
-          const SizedBox(height: FlowForgeSpacing.md),
-          FfText(_error!, fontSize: 14),
-          const SizedBox(height: FlowForgeSpacing.md),
-          FfButton(
-            onTap: () => _loadWorkflow(widget.workflowId!),
-            builder: (ctx, _) => const FfText('重试'),
+          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: Colors.red)),
+          const SizedBox(height: 12),
+          ElevatedButton(
+            onPressed: widget.workflowId != null ? () => _loadWorkflow(widget.workflowId!) : null,
+            child: const Text('重试'),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildTopBar(ThemeData theme, FlowForgeThemeExtension ext) {
-    return SizedBox(
-      height: ext.topBarHeight,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 200,
-            child: TextField(
-              controller: _nameController,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-              decoration: const InputDecoration(border: InputBorder.none, isDense: true),
-            ),
-          ),
-          const Spacer(),
-          // Save button
-          FfButton(
-            onTap: _isSaving ? null : _save,
-            builder: (ctx, hovering) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_isSaving ? Icons.hourglass_empty : Icons.save, size: 16,
-                    color: hovering ? ext.brandColor : null),
-                  const SizedBox(width: 4),
-                  FfText(_isSaving ? '保存中...' : '保存', fontSize: 13),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(width: FlowForgeSpacing.sm),
-          // Execute button
-          FfButton(
-            onTap: _isExecuting ? null : _execute,
-            builder: (ctx, hovering) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: _isExecuting ? Colors.grey : ext.brandColor,
-                borderRadius: BorderRadius.circular(FlowForgeRadius.md),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_isExecuting ? Icons.hourglass_empty : Icons.play_arrow, size: 16, color: Colors.white),
-                  const SizedBox(width: 4),
-                  FfText(_isExecuting ? '执行中...' : '执行', fontSize: 13, color: Colors.white),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEditorPanel(ThemeData theme, FlowForgeThemeExtension ext) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: ext.borderColor),
-        borderRadius: BorderRadius.circular(FlowForgeRadius.lg),
-      ),
-      child: Column(
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(FlowForgeSpacing.sm),
-            decoration: BoxDecoration(
-              color: ext.surfaceColor,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(FlowForgeRadius.lg),
-                topRight: Radius.circular(FlowForgeRadius.lg),
-              ),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.account_tree, size: 16),
-                const SizedBox(width: FlowForgeSpacing.sm),
-                FfText('节点 (${_nodes.length})', fontSize: 12, fontWeight: FontWeight.w600),
-                const Spacer(),
-                FfButton(
-                  onTap: _addNode,
-                  builder: (ctx, _) => const Icon(Icons.add, size: 16),
-                ),
-                const SizedBox(width: 4),
-                FfButton(
-                  onTap: _addEdge,
-                  builder: (ctx, _) => const Icon(Icons.add_link, size: 16),
-                ),
-              ],
-            ),
-          ),
-          const FfDivider(),
-          // Node list
-          Expanded(
-            child: _nodes.isEmpty
-                ? Center(
-                    child: FfText('点击 + 添加节点', fontSize: 13,
-                      color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.all(FlowForgeSpacing.sm),
-                    itemCount: _nodes.length,
-                    itemBuilder: (ctx, i) => _buildNodeCard(i, theme, ext),
-                  ),
-          ),
-          // Edges summary
-          if (_edges.isNotEmpty) ...[
-            const FfDivider(),
-            Padding(
-              padding: const EdgeInsets.all(FlowForgeSpacing.sm),
-              child: FfText(
-                '连接: ${_edges.map((e) => '${e.from}→${e.to}').join(', ')}',
-                fontSize: 11,
-                color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNodeCard(int index, ThemeData theme, FlowForgeThemeExtension ext) {
-    final node = _nodes[index];
-    return Card(
-      margin: const EdgeInsets.only(bottom: 4),
-      child: ListTile(
-        dense: true,
-        leading: Icon(_nodeIcon(node.type), size: 20, color: ext.brandColor),
-        title: FfText(node.id, fontSize: 13, fontWeight: FontWeight.w600),
-        subtitle: FfText('${node.type}  ${_configSummary(node.config)}', fontSize: 11,
-          color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
-        trailing: FfButton(
-          onTap: () => _removeNode(index),
-          builder: (ctx, hovering) => Icon(Icons.close, size: 16,
-            color: hovering ? Colors.red : theme.colorScheme.onSurface.withValues(alpha: 0.3)),
-        ),
       ),
     );
   }
@@ -438,75 +580,24 @@ class _EditorPageState extends State<EditorPage> {
   IconData _nodeIcon(String type) {
     switch (type) {
       case 'log': return Icons.text_snippet;
-      case 'delay': return Icons.timer;
       case 'http': return Icons.http;
-      case 'script': return Icons.code;
+      case 'delay': return Icons.timer;
       case 'shell': return Icons.terminal;
+      case 'script': return Icons.code;
+      case 'webhook': return Icons.webhook;
       default: return Icons.circle;
     }
   }
 
-  String _configSummary(Map<String, dynamic> config) {
-    if (config.isEmpty) return '';
-    final entries = config.entries.take(2).map((e) => '${e.key}=${e.value}').join(', ');
-    return entries.length > 40 ? '${entries.substring(0, 37)}...' : entries;
-  }
-
-  Widget _buildOutputPanel(ThemeData theme, FlowForgeThemeExtension ext) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: ext.borderColor),
-        borderRadius: BorderRadius.circular(FlowForgeRadius.lg),
-      ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(FlowForgeSpacing.sm),
-            decoration: BoxDecoration(
-              color: ext.surfaceColor,
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(FlowForgeRadius.lg),
-                topRight: Radius.circular(FlowForgeRadius.lg),
-              ),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.output, size: 16),
-                SizedBox(width: FlowForgeSpacing.sm),
-                FfText('输出', fontSize: 12, fontWeight: FontWeight.w600),
-              ],
-            ),
-          ),
-          const FfDivider(),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(FlowForgeSpacing.md),
-              child: SingleChildScrollView(
-                child: SelectableText(
-                  _output.isEmpty ? '执行结果将显示在这里' : _output,
-                  style: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    color: _output.isEmpty
-                        ? theme.colorScheme.onSurface.withValues(alpha: 0.4)
-                        : _output.startsWith('✅')
-                            ? Colors.green.shade700
-                            : _output.startsWith('❌')
-                                ? Colors.red.shade700
-                                : theme.colorScheme.onSurface,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
+  Color _nodeColor(String type) {
+    switch (type) {
+      case 'log': return Colors.teal;
+      case 'http': return Colors.blue;
+      case 'delay': return Colors.orange;
+      case 'shell': return Colors.red;
+      case 'script': return Colors.purple;
+      case 'webhook': return Colors.green;
+      default: return Colors.grey;
+    }
   }
 }
