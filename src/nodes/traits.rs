@@ -44,6 +44,7 @@ impl NodeContext {
     }
 
     /// Create a context with NodeRegistry (for nodes that need sub-execution).
+    #[allow(dead_code)]
     pub fn with_registry(registry: Arc<NodeRegistry>) -> Self {
         Self { webbridge: None, node_registry: Some(registry), webhook_store: None }
     }

@@ -24,6 +24,7 @@ pub struct Workflow {
 
 impl Workflow {
     /// Create a new workflow with auto-generated ID.
+    #[allow(dead_code)]
     pub fn new(name: String, description: Option<String>) -> Self {
         Self::with_owner(name, description, None)
     }

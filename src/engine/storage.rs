@@ -25,7 +25,7 @@ impl WorkflowStorage {
         Self { db: Mutex::new(conn), data_dir: dir }
     }
 
-    fn conn(&self) -> FlowResult<std::sync::MutexGuard<rusqlite::Connection>> {
+    fn conn(&self) -> FlowResult<std::sync::MutexGuard<'_, rusqlite::Connection>> {
         self.db.lock().map_err(|e| FlowError::StorageError {
             detail: format!("Lock: {}", e),
         })

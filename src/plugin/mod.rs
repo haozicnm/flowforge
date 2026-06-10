@@ -12,6 +12,7 @@ use std::sync::Mutex;
 
 use crate::nodes::traits::NodeExecutor;
 
+#[allow(improper_ctypes_definitions)]
 type CreateExecutorFn = unsafe extern "C" fn() -> *mut dyn NodeExecutor;
 
 /// Loaded plugin library (keeps the library alive while registered).

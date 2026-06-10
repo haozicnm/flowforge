@@ -4,6 +4,7 @@
 //! The server runs on localhost, Flutter connects via HTTP/WebSocket.
 
 mod api;
+#[allow(dead_code)]
 mod auth;
 mod engine;
 mod error;
