@@ -18,7 +18,15 @@ enum SettingsPageKind { general, shortcuts, about, plugins }
 
 class SettingsShell extends StatefulWidget {
   final FlowForgeApi api;
-  const SettingsShell({super.key, required this.api});
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
+
+  const SettingsShell({
+    super.key,
+    required this.api,
+    required this.themeMode,
+    required this.onThemeModeChanged,
+  });
 
   @override
   State<SettingsShell> createState() => _SettingsShellState();
@@ -68,7 +76,10 @@ class _SettingsShellState extends State<SettingsShell> {
 
   Widget _buildPage() {
     switch (_page) {
-      case SettingsPageKind.general: return const GeneralSettings();
+      case SettingsPageKind.general: return GeneralSettings(
+        themeMode: widget.themeMode,
+        onThemeModeChanged: widget.onThemeModeChanged,
+      );
       case SettingsPageKind.shortcuts: return const ShortcutSettings();
       case SettingsPageKind.about: return const AboutSettings();
       case SettingsPageKind.plugins: return PluginSettings(api: widget.api);

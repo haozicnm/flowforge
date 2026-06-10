@@ -92,10 +92,17 @@ class _CommandPaletteIntent extends Intent {
   const _CommandPaletteIntent();
 }
 
-class FlowForgeApp extends StatelessWidget {
+class FlowForgeApp extends StatefulWidget {
   final ServerManager serverManager;
 
   const FlowForgeApp({super.key, required this.serverManager});
+
+  @override
+  State<FlowForgeApp> createState() => _FlowForgeAppState();
+}
+
+class _FlowForgeAppState extends State<FlowForgeApp> {
+  ThemeMode _themeMode = ThemeMode.system;
 
   @override
   Widget build(BuildContext context) {
@@ -104,16 +111,27 @@ class FlowForgeApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: buildLightTheme(),
       darkTheme: buildDarkTheme(),
-      themeMode: ThemeMode.system,
-      home: MainShell(serverManager: serverManager),
+      themeMode: _themeMode,
+      home: MainShell(
+        serverManager: widget.serverManager,
+        themeMode: _themeMode,
+        onThemeModeChanged: (m) => setState(() => _themeMode = m),
+      ),
     );
   }
 }
 
 class MainShell extends StatefulWidget {
   final ServerManager serverManager;
+  final ThemeMode themeMode;
+  final ValueChanged<ThemeMode> onThemeModeChanged;
 
-  const MainShell({super.key, required this.serverManager});
+  const MainShell({
+    super.key,
+    required this.serverManager,
+    required this.themeMode,
+    required this.onThemeModeChanged,
+  });
 
   @override
   State<MainShell> createState() => _MainShellState();
@@ -161,7 +179,11 @@ class _MainShellState extends State<MainShell> {
                     children: [
                       DashboardPage(api: api, onOpenEditor: _openWorkflow),
                       EditorPage(api: api, workflowId: _selectedWorkflowId),
-                      SettingsShell(api: api),
+                      SettingsShell(
+                        api: api,
+                        themeMode: widget.themeMode,
+                        onThemeModeChanged: widget.onThemeModeChanged,
+                      ),
                     ],
                   ),
                 ),
