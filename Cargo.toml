@@ -46,3 +46,20 @@ regex = "1"
 
 # Async trait support
 async-trait = "0.1"
+
+# HTTP client (for http_node real implementation)
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+
+# WebSocket client (for webbridge browser automation)
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+futures-util = "0.3"
+
+# Excel read (calamine)
+calamine = "0.26"
+
+# Excel write (umya-spreadsheet)
+umya-spreadsheet = "1"
+
+# ZIP support (for .docx read/write)
+zip = "2"
+quick-xml = "0.36"

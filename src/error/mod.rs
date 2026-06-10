@@ -55,6 +55,10 @@ pub enum FlowError {
     #[error("Storage error: {detail}")]
     StorageError { detail: String },
 
+    // ── Node execution errors ──
+    #[error("Node {node_id} execution failed: {detail}")]
+    NodeExecutionFailed { node_id: String, detail: String },
+
     // ── IO errors ──
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

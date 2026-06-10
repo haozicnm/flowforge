@@ -19,13 +19,42 @@ impl NodeRegistry {
         let registry = Self {
             executors: RwLock::new(HashMap::new()),
         };
-        // Register built-in nodes
+
+        // === Original 6 ===
         registry.register_builtin::<super::http_node::HttpNode>();
         registry.register_builtin::<super::shell_node::ShellNode>();
         registry.register_builtin::<super::delay_node::DelayNode>();
         registry.register_builtin::<super::script_node::ScriptNode>();
         registry.register_builtin::<super::webhook_node::WebhookNode>();
         registry.register_builtin::<super::log_node::LogNode>();
+
+        // === Flow control ===
+        registry.register_builtin::<super::condition_node::ConditionNode>();
+        registry.register_builtin::<super::loop_node::LoopNode>();
+        registry.register_builtin::<super::try_catch_node::TryCatchNode>();
+
+        // === Data operations ===
+        registry.register_builtin::<super::variable_node::VariableNode>();
+        registry.register_builtin::<super::json_node::JsonNode>();
+        registry.register_builtin::<super::regex_node::RegexNode>();
+        registry.register_builtin::<super::template_node::TemplateNode>();
+
+        // === Web automation (WebBridge) ===
+        registry.register_builtin::<super::web_navigate_node::WebNavigateNode>();
+        registry.register_builtin::<super::web_click_node::WebClickNode>();
+        registry.register_builtin::<super::web_input_node::WebInputNode>();
+        registry.register_builtin::<super::web_extract_node::WebExtractNode>();
+        registry.register_builtin::<super::web_screenshot_node::WebScreenshotNode>();
+        registry.register_builtin::<super::web_wait_node::WebWaitNode>();
+
+        // === Excel ===
+        registry.register_builtin::<super::excel_read_node::ExcelReadNode>();
+        registry.register_builtin::<super::excel_write_node::ExcelWriteNode>();
+
+        // === Word (.docx) ===
+        registry.register_builtin::<super::docx_read_node::DocxReadNode>();
+        registry.register_builtin::<super::docx_create_node::DocxCreateNode>();
+
         registry
     }
 

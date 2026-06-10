@@ -1,4 +1,4 @@
-//! HTTP node — makes HTTP requests.
+//! HTTP node — makes real HTTP requests using reqwest.
 //!
 //! This is the most commonly used node. It demonstrates the correct pattern:
 //! - Execute receives already-resolved config
@@ -63,10 +63,11 @@ impl NodeExecutor for HttpNode {
         &self,
         _node: &Node,
         config: serde_json::Value,
-        _inputs: HashMap<String, serde_json::Value>,
+        inputs: HashMap<String, serde_json::Value>,
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
         let url = config["url"]
             .as_str()
+            .or_else(|| inputs.get("url").and_then(|v| v.as_str()))
             .ok_or_else(|| FlowError::InvalidNodeConfig {
                 node_id: "http".to_string(),
                 detail: "url is required and must be a string".to_string(),
@@ -75,13 +76,70 @@ impl NodeExecutor for HttpNode {
         let method = config["method"].as_str().unwrap_or("GET");
         let timeout = config["timeout_secs"].as_u64().unwrap_or(30);
 
-        // TODO: actual HTTP request
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout))
+            .build()
+            .map_err(|e| FlowError::NodeExecutionFailed {
+                node_id: "http".to_string(),
+                detail: format!("failed to create HTTP client: {}", e),
+            })?;
+
+        let mut req_builder = match method.to_uppercase().as_str() {
+            "GET" => client.get(url),
+            "POST" => client.post(url),
+            "PUT" => client.put(url),
+            "DELETE" => client.delete(url),
+            "PATCH" => client.patch(url),
+            "HEAD" => client.head(url),
+            _ => {
+                return Err(FlowError::InvalidNodeConfig {
+                    node_id: "http".to_string(),
+                    detail: format!("unsupported method: {}", method),
+                });
+            }
+        };
+
+        // Add headers
+        if let Some(headers) = config["headers"].as_object() {
+            for (key, value) in headers {
+                if let Some(val) = value.as_str() {
+                    req_builder = req_builder.header(key.as_str(), val);
+                }
+            }
+        }
+
+        // Add body
+        if let Some(body) = config["body"].as_str() {
+            req_builder = req_builder
+                .header("content-type", "application/json")
+                .body(body.to_string());
+        }
+
         tracing::info!("HTTP {} {} (timeout: {}s)", method, url, timeout);
 
+        let response = req_builder.send().await.map_err(|e| FlowError::NodeExecutionFailed {
+            node_id: "http".to_string(),
+            detail: format!("request failed: {}", e),
+        })?;
+
+        let status = response.status().as_u16();
+        let resp_headers: serde_json::Value = serde_json::json!(
+            response.headers().iter()
+                .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                .collect::<HashMap<String, String>>()
+        );
+
+        let body_text = response.text().await.map_err(|e| FlowError::NodeExecutionFailed {
+            node_id: "http".to_string(),
+            detail: format!("failed to read response body: {}", e),
+        })?;
+
+        tracing::info!("HTTP response: {} ({} bytes)", status, body_text.len());
+
         let mut outputs = HashMap::new();
-        outputs.insert("status".to_string(), serde_json::json!(200));
-        outputs.insert("body".to_string(), serde_json::json!("{}"));
-        outputs.insert("headers".to_string(), serde_json::json!({}));
+        outputs.insert("status".to_string(), serde_json::json!(status));
+        outputs.insert("body".to_string(), serde_json::json!(body_text));
+        outputs.insert("headers".to_string(), resp_headers);
         Ok(outputs)
     }
 }
