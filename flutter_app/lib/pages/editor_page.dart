@@ -5,6 +5,7 @@ import '../api/flowforge_api.dart';
 import '../theme/flowforge_theme.dart';
 import '../widgets/ff_widgets.dart';
 import '../widgets/canvas_editor.dart';
+import '../widgets/code_editor.dart';
 
 class EditorPage extends StatefulWidget {
   final FlowForgeApi api;
@@ -29,9 +30,10 @@ class _EditorPageState extends State<EditorPage> {
   List<WorkflowEdge> _edges = [];
   List<NodeTypeDef> _nodeTypes = [];
 
-  // View mode: canvas or form
-  bool _canvasMode = true;
+  // View mode: canvas, form, or code
+  int _viewMode = 0; // 0=canvas, 1=form, 2=code
   String? _selectedNodeId;
+  String _codeJson = '';
 
   @override
   void initState() {
@@ -260,10 +262,14 @@ class _EditorPageState extends State<EditorPage> {
           Expanded(
             child: Row(
               children: [
-                // Canvas / Form editor
+                // Canvas / Form / Code editor
                 Expanded(
                   flex: 3,
-                  child: _canvasMode ? _buildCanvas(ext) : _buildFormEditor(theme, ext),
+                  child: _viewMode == 0
+                      ? _buildCanvas(ext)
+                      : _viewMode == 1
+                          ? _buildFormEditor(theme, ext)
+                          : _buildCodeEditor(theme, ext),
                 ),
                 const SizedBox(width: FlowForgeSpacing.md),
                 // Right panel: properties + output
@@ -306,6 +312,94 @@ class _EditorPageState extends State<EditorPage> {
         ),
       ),
     );
+  }
+
+  Widget _buildCodeEditor(ThemeData theme, FlowForgeThemeExtension ext) {
+    return Container(
+      decoration: BoxDecoration(
+        color: ext.surfaceColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ext.borderColor),
+      ),
+      child: Column(
+        children: [
+          // Toolbar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                FfText('JSON 编辑器', fontSize: 12, fontWeight: FontWeight.w600),
+                const Spacer(),
+                FfButton(
+                  onTap: () {
+                    // Format JSON
+                    setState(() => _codeJson = formatJson(_codeJson));
+                  },
+                  builder: (ctx, _) => const Icon(Icons.format_align_left, size: 16),
+                ),
+                const SizedBox(width: 4),
+                FfButton(
+                  onTap: () {
+                    // Apply changes from code to nodes/edges
+                    _applyCodeChanges();
+                  },
+                  builder: (ctx, _) => Icon(Icons.check, size: 16, color: Colors.green),
+                ),
+              ],
+            ),
+          ),
+          const FfDivider(),
+          // Editor
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: CodeEditor(
+                initialCode: _codeJson.isEmpty
+                    ? formatJson(jsonEncode({
+                        'name': _nameController.text,
+                        'nodes': _nodes.map((n) => n.toJson()).toList(),
+                        'edges': _edges.map((e) => e.toJson()).toList(),
+                      }))
+                    : _codeJson,
+                onChanged: (v) => _codeJson = v,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyCodeChanges() {
+    try {
+      final obj = jsonDecode(_codeJson);
+      if (obj is Map<String, dynamic>) {
+        setState(() {
+          if (obj['name'] != null) _nameController.text = obj['name'] as String;
+          if (obj['nodes'] != null) {
+            _nodes = (obj['nodes'] as List)
+                .map((n) => WorkflowNode.fromJson(n as Map<String, dynamic>))
+                .toList();
+          }
+          if (obj['edges'] != null) {
+            _edges = (obj['edges'] as List)
+                .map((e) => WorkflowEdge.fromJson(e as Map<String, dynamic>))
+                .toList();
+          }
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('代码已应用'), duration: Duration(seconds: 1)),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('JSON 解析失败: $e')),
+        );
+      }
+    }
   }
 
   Widget _buildFormEditor(ThemeData theme, FlowForgeThemeExtension ext) {
@@ -460,13 +554,26 @@ class _EditorPageState extends State<EditorPage> {
           ),
         ),
         // View toggle
-        SegmentedButton<bool>(
+        SegmentedButton<int>(
           segments: const [
-            ButtonSegment(value: true, icon: Icon(Icons.dashboard, size: 16), label: Text('画布')),
-            ButtonSegment(value: false, icon: Icon(Icons.list, size: 16), label: Text('列表')),
+            ButtonSegment(value: 0, icon: Icon(Icons.dashboard, size: 16), label: Text('画布')),
+            ButtonSegment(value: 1, icon: Icon(Icons.list, size: 16), label: Text('列表')),
+            ButtonSegment(value: 2, icon: Icon(Icons.code, size: 16), label: Text('代码')),
           ],
-          selected: {_canvasMode},
-          onSelectionChanged: (v) => setState(() => _canvasMode = v.first),
+          selected: {_viewMode},
+          onSelectionChanged: (v) {
+            setState(() {
+              _viewMode = v.first;
+              if (_viewMode == 2) {
+                // Sync code view from nodes/edges
+                _codeJson = formatJson(jsonEncode({
+                  'name': _nameController.text,
+                  'nodes': _nodes.map((n) => n.toJson()).toList(),
+                  'edges': _edges.map((e) => e.toJson()).toList(),
+                }));
+              }
+            });
+          },
           style: ButtonStyle(visualDensity: VisualDensity.compact),
         ),
         const SizedBox(width: FlowForgeSpacing.md),
