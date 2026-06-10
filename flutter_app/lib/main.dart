@@ -3,6 +3,7 @@
 // Architecture: Flutter Desktop connects to Rust backend via HTTP.
 // Backend is started separately — this app only connects.
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'api/flowforge_api.dart';
 import 'services/server_manager.dart';
 import 'theme/flowforge_theme.dart';
@@ -22,6 +23,51 @@ void main() async {
   );
 
   runApp(FlowForgeApp(serverManager: serverManager));
+}
+
+/// Global keyboard shortcuts.
+class FlowForgeShortcuts extends StatelessWidget {
+  final Widget child;
+  final VoidCallback? onSave;
+  final VoidCallback? onExecute;
+
+  const FlowForgeShortcuts({
+    super.key,
+    required this.child,
+    this.onSave,
+    this.onExecute,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Shortcuts(
+      shortcuts: {
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyS):
+            const _SaveIntent(),
+        LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.enter):
+            const _ExecuteIntent(),
+      },
+      child: Actions(
+        actions: {
+          _SaveIntent: CallbackAction<_SaveIntent>(
+            onInvoke: (_) => onSave?.call(),
+          ),
+          _ExecuteIntent: CallbackAction<_ExecuteIntent>(
+            onInvoke: (_) => onExecute?.call(),
+          ),
+        },
+        child: Focus(autofocus: true, child: child),
+      ),
+    );
+  }
+}
+
+class _SaveIntent extends Intent {
+  const _SaveIntent();
+}
+
+class _ExecuteIntent extends Intent {
+  const _ExecuteIntent();
 }
 
 class FlowForgeApp extends StatelessWidget {
@@ -69,27 +115,62 @@ class _MainShellState extends State<MainShell> {
     final api = FlowForgeApi(baseUrl: widget.serverManager.serverUrl);
 
     return Scaffold(
-      body: Stack(
+      body: Column(
         children: [
-          Positioned.fill(
-            left: ext.sidebarWidth + 1,
-            child: IndexedStack(
-              index: _selectedIndex,
+          Expanded(
+            child: Stack(
               children: [
-                DashboardPage(api: api, onOpenEditor: _openWorkflow),
-                EditorPage(api: api, workflowId: _selectedWorkflowId),
-                const SettingsPage(),
+                Positioned.fill(
+                  left: ext.sidebarWidth + 1,
+                  child: IndexedStack(
+                    index: _selectedIndex,
+                    children: [
+                      DashboardPage(api: api, onOpenEditor: _openWorkflow),
+                      EditorPage(api: api, workflowId: _selectedWorkflowId),
+                      const SettingsPage(),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  left: 0, top: 0, bottom: 0,
+                  width: ext.sidebarWidth,
+                  child: _buildSidebar(theme, ext),
+                ),
+                Positioned(
+                  left: ext.sidebarWidth, top: 0, bottom: 0,
+                  child: const FfDivider(direction: Axis.vertical),
+                ),
               ],
             ),
           ),
-          Positioned(
-            left: 0, top: 0, bottom: 0,
-            width: ext.sidebarWidth,
-            child: _buildSidebar(theme, ext),
-          ),
-          Positioned(
-            left: ext.sidebarWidth, top: 0, bottom: 0,
-            child: const FfDivider(direction: Axis.vertical),
+          // Status bar
+          Container(
+            height: 24,
+            color: ext.surfaceColor,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Row(
+                children: [
+                  Icon(Icons.circle, size: 8,
+                    color: widget.serverManager.isConnected ? Colors.green : Colors.red),
+                  const SizedBox(width: 6),
+                  FfText(
+                    widget.serverManager.isConnected ? '已连接' : '未连接',
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                  const Spacer(),
+                  FfText(
+                    widget.serverManager.serverUrl,
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(width: 12),
+                  FfText('Ctrl+S 保存  Ctrl+Enter 执行', fontSize: 10,
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
+                ],
+              ),
+            ),
           ),
         ],
       ),
