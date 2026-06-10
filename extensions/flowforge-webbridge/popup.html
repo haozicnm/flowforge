@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { width: 300px; padding: 0; margin: 0; font-family: system-ui; font-size: 12px; background: #0d1117; color: #c9d1d9; }
+    .header { padding: 10px 12px 6px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #21262d; }
+    .header h3 { margin: 0; font-size: 13px; flex: 1; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-ok { background: #22a55b; }
+    .dot-err { background: #e53935; }
+    .section { padding: 8px 12px; border-bottom: 1px solid #21262d; }
+    .section-title { font-size: 10px; text-transform: uppercase; color: #8b949e; margin-bottom: 6px; letter-spacing: .5px; }
+    .row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
+    .row label { color: #8b949e; width: 32px; flex-shrink: 0; }
+    input { width: 72px; padding: 3px 6px; border: 1px solid #30363d; border-radius: 4px; background: #161b22; color: #c9d1d9; font-size: 12px; }
+    button { padding: 3px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; }
+    .btn-save { background: #238636; color: #fff; }
+    .btn-save:hover { background: #2ea043; }
+    .btn-refresh { background: #21262d; color: #8b949e; }
+    .btn-refresh:hover { background: #30363d; }
+    .tab-item { padding: 2px 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tab-item .url { color: #58a6ff; }
+    .tab-item .title { color: #8b949e; margin-left: 4px; }
+    .tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; margin-right: 3px; }
+    .tag-active { background: #1a3a2a; color: #22a55b; }
+    .tag-session { background: #1a2a3a; color: #58a6ff; }
+    .info-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+    .info-row .label { color: #8b949e; }
+    .empty { color: #484f58; font-style: italic; font-size: 11px; padding: 4px 0; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div id="connDot" class="dot dot-err"></div>
+    <h3>FlowForge WebBridge</h3>
+    <span id="connLabel" style="font-size:11px;color:#8b949e">检查中...</span>
+  </div>
+
+  <div class="section">
+    <div class="section-title">连接配置</div>
+    <div class="row">
+      <label>端口</label>
+      <input type="number" id="port" min="1024" max="65535">
+      <button class="btn-save" id="save">保存</button>
+      <button class="btn-refresh" id="refresh">↻</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">运行状态</div>
+    <div id="statusBody">
+      <div class="empty">加载中...</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">标签页</div>
+    <div id="tabBody">
+      <div class="empty">加载中...</div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

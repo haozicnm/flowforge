@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "FlowForge WebBridge",
+  "version": "1.0.0",
+  "description": "浏览器自动化桥接 — 为 FlowForge 提供 CDP 控制能力",
+  "permissions": [
+    "debugger",
+    "tabs",
+    "activeTab",
+    "tabGroups",
+    "storage",
+    "windows",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon/16.png",
+      "32": "icon/32.png",
+      "48": "icon/48.png",
+      "128": "icon/128.png"
+    }
+  },
+  "icons": {
+    "16": "icon/16.png",
+    "32": "icon/32.png",
+    "48": "icon/48.png",
+    "128": "icon/128.png"
+  }
+}
