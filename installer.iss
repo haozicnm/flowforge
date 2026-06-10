@@ -1,8 +1,8 @@
 ; FlowForge Installer Script for Inno Setup 6
-; Generates FlowForge-v0.1.0-Setup.exe
+; Generates FlowForge-v1.0.0-Setup.exe
 
 #define MyAppName "FlowForge"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "FlowForge"
 #define MyAppExeName "flowforge.exe"
 
@@ -52,9 +52,9 @@ begin
     AppDir := ExpandConstant('{app}');
     LauncherPath := AppDir + '\FlowForgeLauncher.bat';
     Content := '@echo off' + #13#10 +
-      'title FlowForge v0.1.0' + #13#10 +
+      'title FlowForge v1.0.0' + #13#10 +
       'echo.' + #13#10 +
-      'echo  FlowForge v0.1.0' + #13#10 +
+      'echo  FlowForge v1.0.0' + #13#10 +
       'echo  Starting...' + #13#10 +
       'echo.' + #13#10 +
       'start /B "" "' + AppDir + '\backend\flowforge.exe"' + #13#10 +

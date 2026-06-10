@@ -1,8 +1,10 @@
 // Dashboard page — workflow list with create/delete.
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../api/flowforge_api.dart';
 import '../theme/flowforge_theme.dart';
 import '../widgets/ff_widgets.dart';
+import '../widgets/flowforge_icons.dart';
 
 class DashboardPage extends StatefulWidget {
   final FlowForgeApi api;
@@ -50,7 +52,7 @@ class _DashboardPageState extends State<DashboardPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('创建失败: $e')),
+          SnackBar(content: Text('dashboard.createFailed'.tr(args: [e.toString()]))),
         );
       }
     }
@@ -60,13 +62,13 @@ class _DashboardPageState extends State<DashboardPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确定删除工作流"${wf.name}"？'),
+        title: Text('dashboard.confirmDelete'.tr()),
+        content: Text('dashboard.deleteConfirm'.tr(args: [wf.name])),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('dashboard.cancel'.tr())),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text('dashboard.delete'.tr(), style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -79,7 +81,7 @@ class _DashboardPageState extends State<DashboardPage> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e')),
+          SnackBar(content: Text('dashboard.deleteFailed'.tr(args: [e.toString()]))),
         );
       }
     }
@@ -90,21 +92,21 @@ class _DashboardPageState extends State<DashboardPage> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建工作流'),
+        title: Text('dashboard.createDialog'.tr()),
         content: TextField(
           controller: controller,
           autofocus: true,
           decoration: const InputDecoration(
-            hintText: '工作流名称',
+            hintText: 'dashboard.nameHint'.tr(),
             border: OutlineInputBorder(),
           ),
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text('dashboard.cancel'.tr())),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('创建'),
+            child: Text('dashboard.create'.tr()),
           ),
         ],
       ),
@@ -134,7 +136,7 @@ class _DashboardPageState extends State<DashboardPage> {
       height: ext.topBarHeight,
       child: Row(
         children: [
-          FfText('我的工作流', fontSize: 22, fontWeight: FontWeight.w600),
+          FfText('dashboard.title'.tr(), fontSize: 22, fontWeight: FontWeight.w600),
           const Spacer(),
           FfButton(
             onTap: _createWorkflow,
@@ -153,9 +155,9 @@ class _DashboardPageState extends State<DashboardPage> {
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.add, size: 16, color: Colors.white),
+                    FfSvg(FfIconName.add, size: 16, color: Colors.white),
                     SizedBox(width: FlowForgeSpacing.xs),
-                    FfText('新建工作流', fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500),
+                    FfText('dashboard.newWorkflow'.tr(), fontSize: 13, color: Colors.white, fontWeight: FontWeight.w500),
                   ],
                 ),
               );
@@ -178,9 +180,9 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.error_outline, size: 48, color: theme.colorScheme.error),
+          FfSvg(FfIconName.error, size: 48, color: theme.colorScheme.error),
           const SizedBox(height: FlowForgeSpacing.md),
-          const FfText('连接服务器失败', fontSize: 18, fontWeight: FontWeight.w600),
+          const FfText('dashboard.connectionFailed'.tr(), fontSize: 18, fontWeight: FontWeight.w600),
           const SizedBox(height: FlowForgeSpacing.sm),
           FfText(_error!, fontSize: 13),
           const SizedBox(height: FlowForgeSpacing.md),
@@ -189,7 +191,7 @@ class _DashboardPageState extends State<DashboardPage> {
               setState(() { _loading = true; _error = null; });
               _loadWorkflows();
             },
-            builder: (context, _) => const FfText('重试'),
+            builder: (context, _) => FfText('dashboard.retry'.tr()),
           ),
         ],
       ),
@@ -201,12 +203,12 @@ class _DashboardPageState extends State<DashboardPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.workspaces_outlined, size: 64, color: ext.brandColor.withValues(alpha: 0.5)),
+          FfSvg(FfIconName.workspaces, size: 64, color: ext.brandColor.withValues(alpha: 0.5)),
           const SizedBox(height: FlowForgeSpacing.md),
-          const FfText('还没有工作流', fontSize: 18, fontWeight: FontWeight.w600),
+          const FfText('dashboard.emptyTitle'.tr(), fontSize: 18, fontWeight: FontWeight.w600),
           const SizedBox(height: FlowForgeSpacing.sm),
           FfText(
-            '点击"新建工作流"开始自动化之旅',
+            'dashboard.emptySubtitle'.tr(),
             fontSize: 13,
             color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
           ),
@@ -261,7 +263,7 @@ class _WorkflowCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.play_circle_outline, color: ext.brandColor, size: 18),
+                FfSvg(FfIconName.play, color: ext.brandColor, size: 18),
                 const SizedBox(width: FlowForgeSpacing.sm),
                 Expanded(
                   child: FfText(workflow.name, fontSize: 14, fontWeight: FontWeight.w600),
@@ -269,8 +271,8 @@ class _WorkflowCard extends StatelessWidget {
                 // Delete button
                 FfButton(
                   onTap: onDelete,
-                  builder: (ctx, hovering) => Icon(
-                    Icons.delete_outline,
+                  builder: (ctx, hovering) => FfSvg(
+                    FfIconName.delete,
                     size: 16,
                     color: hovering ? Colors.red : theme.colorScheme.onSurface.withValues(alpha: 0.3),
                   ),
@@ -285,7 +287,7 @@ class _WorkflowCard extends StatelessWidget {
             Row(
               children: [
                 FfText(
-                  '${workflow.nodeCount} 节点',
+                  'dashboard.nodes'.tr(args: ['${workflow.nodeCount}']),
                   fontSize: 11,
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.4),
                 ),

@@ -4,9 +4,11 @@
 //! The server runs on localhost, Flutter connects via HTTP/WebSocket.
 
 mod api;
+mod auth;
 mod engine;
 mod error;
 mod nodes;
+mod plugin;
 mod state;
 mod webbridge;
 
@@ -35,26 +37,48 @@ async fn main() {
 
     let state = AppState::new(config);
 
+    // Load dynamic plugins
+    let plugin_mgr = plugin::PluginManager::new("plugins");
+    match plugin_mgr.scan_and_load(&state.node_registry) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("Loaded {} plugins", n),
+        Err(e) => tracing::warn!("Plugin loading error: {}", e),
+    }
+
     tracing::info!("FlowForge v{} starting...", env!("CARGO_PKG_VERSION"));
 
     // Build router
     let app = Router::new()
         // Health
         .route("/api/health", get(api::health))
+        // Auth
+        .route("/api/auth/register", post(api::register))
+        .route("/api/auth/login", post(api::login))
+        .route("/api/auth/me", get(api::whoami))
         // Node types
         .route("/api/nodes/types", get(api::node_types))
+        // Plugin management
+        .route("/api/plugins/list", get(api::list_plugins))
         // Workflow CRUD
         .route("/api/workflows", get(api::list_workflows))
         .route("/api/workflows", post(api::create_workflow))
+        .route("/api/workflows/export-all", get(api::export_all_workflows))
+        .route("/api/workflows/import", post(api::import_workflow))
         .route("/api/workflows/:id", get(api::get_workflow))
         .route("/api/workflows/:id", put(api::update_workflow))
         .route("/api/workflows/:id", delete(api::delete_workflow))
+        .route("/api/workflows/:id/export", get(api::export_workflow))
         // Execution
         .route("/api/workflows/:id/execute", post(api::execute_workflow))
         // WebBridge — browser automation via Chrome extension
         .route("/api/browser/status", get(api::browser_status))
         .route("/api/browser/command", post(webbridge::browser_command))
         .route("/ws/browser", get(webbridge::ws_handler))
+        // WebSocket execution streaming
+        .route("/ws/execute/:id", get(api::ws_execute))
+        // Webhook trigger
+        .route("/api/webhook/:workflow_id/:node_id", post(api::webhook_trigger))
+        .route("/api/webhook/:workflow_id/:node_id", get(api::webhook_trigger))
         .layer(CorsLayer::permissive())
         .with_state(state)
         .fallback_service(tower_http::services::ServeDir::new(&static_dir));

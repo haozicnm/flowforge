@@ -17,12 +17,19 @@ pub struct Workflow {
     pub edges: Vec<Edge>,
     #[serde(default)]
     pub variables: Vec<Variable>,
+    #[serde(default)]
+    pub owner_id: Option<String>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl Workflow {
     /// Create a new workflow with auto-generated ID.
     pub fn new(name: String, description: Option<String>) -> Self {
+        Self::with_owner(name, description, None)
+    }
+
+    /// Create a new workflow with an owner.
+    pub fn with_owner(name: String, description: Option<String>, owner_id: Option<String>) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name,
@@ -30,6 +37,7 @@ impl Workflow {
             nodes: Vec::new(),
             edges: Vec::new(),
             variables: Vec::new(),
+            owner_id,
             created_at: chrono::Utc::now(),
         }
     }

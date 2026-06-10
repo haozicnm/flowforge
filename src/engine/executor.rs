@@ -71,15 +71,21 @@ pub enum ExecutionEvent {
 pub struct Executor {
     registry: Arc<NodeRegistry>,
     webbridge: Option<WebBridgeState>,
+    webhook_store: Option<Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>>,
 }
 
 impl Executor {
     pub fn new(registry: Arc<NodeRegistry>) -> Self {
-        Self { registry, webbridge: None }
+        Self { registry, webbridge: None, webhook_store: None }
     }
 
     pub fn with_webbridge(mut self, webbridge: WebBridgeState) -> Self {
         self.webbridge = Some(webbridge);
+        self
+    }
+
+    pub fn with_webhook_store(mut self, store: Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>) -> Self {
+        self.webhook_store = Some(store);
         self
     }
 
@@ -127,10 +133,12 @@ impl Executor {
 
             // Execute the node
             let executor = self.registry.get_executor(&node.node_type)?;
-            let ctx = match &self.webbridge {
+            let mut ctx = match &self.webbridge {
                 Some(wb) => NodeContext::with_webbridge(wb.clone()),
                 None => NodeContext::empty(),
             };
+            ctx.node_registry = Some(self.registry.clone());
+            ctx.webhook_store = self.webhook_store.clone();
             match executor.execute(node, &ctx, resolved_config, inputs).await {
                 Ok(outputs) => {
                     let mut s = state.write().await;
@@ -167,7 +175,11 @@ impl Executor {
         }
 
         self.send_event(&event_tx, ExecutionEvent::WorkflowCompleted).await;
-        Ok(Arc::try_unwrap(state).unwrap().into_inner())
+        Arc::try_unwrap(state)
+            .map(|s| s.into_inner())
+            .map_err(|_| FlowError::ExecutionError(
+                "execution state Arc still has outstanding references".into()
+            ))
     }
 
     /// Topological sort of nodes based on edges.

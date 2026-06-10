@@ -1,5 +1,6 @@
 // Editor page — visual canvas + form editing + execution.
 import 'dart:convert';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../api/flowforge_api.dart';
 import '../theme/flowforge_theme.dart';
@@ -32,6 +33,7 @@ class _EditorPageState extends State<EditorPage> {
 
   // View mode: canvas, form, or code
   int _viewMode = 0; // 0=canvas, 1=form, 2=code
+  int _propsViewMode = 0; // 0=form, 1=json
   String? _selectedNodeId;
   String _codeJson = '';
 
@@ -151,12 +153,12 @@ class _EditorPageState extends State<EditorPage> {
           children: [
             TextField(
               controller: idController,
-              decoration: const InputDecoration(labelText: '节点 ID', border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: '节点 ID', border: const OutlineInputBorder()),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
               value: selectedType,
-              decoration: const InputDecoration(labelText: '类型', border: OutlineInputBorder()),
+              decoration: InputDecoration(labelText: '类型', border: const OutlineInputBorder()),
               items: _nodeTypes.map((t) => DropdownMenuItem(
                 value: t.typeName,
                 child: Text(t.displayName),
@@ -181,7 +183,7 @@ class _EditorPageState extends State<EditorPage> {
                 Navigator.pop(ctx);
               }
             },
-            child: const Text('添加'),
+            child: Text('dashboard.create'.tr()),
           ),
         ],
       ),
@@ -335,7 +337,7 @@ class _EditorPageState extends State<EditorPage> {
                     // Format JSON
                     setState(() => _codeJson = formatJson(_codeJson));
                   },
-                  builder: (ctx, _) => const Icon(Icons.format_align_left, size: 16),
+                  builder: (ctx, _) => const FfSvg(FfIconName.formatAlignLeft, size: 16),
                 ),
                 const SizedBox(width: 4),
                 FfButton(
@@ -343,7 +345,7 @@ class _EditorPageState extends State<EditorPage> {
                     // Apply changes from code to nodes/edges
                     _applyCodeChanges();
                   },
-                  builder: (ctx, _) => Icon(Icons.check, size: 16, color: Colors.green),
+                  builder: (ctx, _) => FfSvg(FfIconName.check, size: 16, color: Colors.green),
                 ),
               ],
             ),
@@ -420,12 +422,12 @@ class _EditorPageState extends State<EditorPage> {
                 const Spacer(),
                 FfButton(
                   onTap: _addNode,
-                  builder: (ctx, _) => const Icon(Icons.add, size: 16),
+                  builder: (ctx, _) => const FfSvg(FfIconName.add, size: 16),
                 ),
                 const SizedBox(width: 4),
                 FfButton(
                   onTap: _addEdge,
-                  builder: (ctx, _) => const Icon(Icons.add_link, size: 16),
+                  builder: (ctx, _) => const FfSvg(FfIconName.link, size: 16),
                 ),
               ],
             ),
@@ -454,7 +456,7 @@ class _EditorPageState extends State<EditorPage> {
                   Expanded(child: FfText('${e.from} → ${e.to}', fontSize: 12)),
                   GestureDetector(
                     onTap: () => setState(() => _edges.remove(e)),
-                    child: Icon(Icons.close, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+                    child: FfSvg(FfIconName.close, size: 14, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
                   ),
                 ],
               ),
@@ -473,7 +475,7 @@ class _EditorPageState extends State<EditorPage> {
       subtitle: FfText(node.type, fontSize: 11, color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
       trailing: GestureDetector(
         onTap: () => _removeNode(node.id),
-        child: Icon(Icons.delete_outline, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+        child: FfSvg(FfIconName.delete, size: 16, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
       ),
       selected: _selectedNodeId == node.id,
       selectedTileColor: ext.brandColor.withValues(alpha: 0.08),
@@ -485,6 +487,8 @@ class _EditorPageState extends State<EditorPage> {
     final node = _nodes.where((n) => n.id == _selectedNodeId).firstOrNull;
     if (node == null) return const SizedBox.shrink();
 
+    final typeDef = _nodeTypes.where((t) => t.typeName == node.type).firstOrNull;
+
     return Container(
       decoration: BoxDecoration(
         color: ext.surfaceColor,
@@ -495,46 +499,187 @@ class _EditorPageState extends State<EditorPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header row
           Row(
             children: [
-              Icon(_nodeIcon(node.type), size: 18, color: _nodeColor(node.type)),
+              FfSvg(ffNodeIcon(node.type), size: 18, color: ffNodeColor(node.type)),
               const SizedBox(width: 8),
               Expanded(child: FfText(node.id, fontSize: 14, fontWeight: FontWeight.w600)),
               GestureDetector(
                 onTap: () => _removeNode(node.id),
-                child: Icon(Icons.delete_outline, size: 16, color: Colors.red.withValues(alpha: 0.7)),
+                child: FfSvg(FfIconName.delete, size: 16, color: Colors.red.withValues(alpha: 0.7)),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          // Label field
-          TextField(
-            controller: TextEditingController(text: node.label),
-            decoration: const InputDecoration(labelText: '标签', border: OutlineInputBorder(), isDense: true),
-            onChanged: (v) => node.label = v,  // WorkflowNode.label needs to be non-final
+          const SizedBox(height: 8),
+          // Mode toggle
+          Row(
+            children: [
+              FfButton.text(
+                label: '表单',
+                size: FfButtonSize.sm,
+                textColor: _propsViewMode == 0 ? ext.brandColor : ext.icon.secondary, // FIXME
+                onTap: () => setState(() => _propsViewMode = 0),
+              ),
+              const SizedBox(width: 4),
+              FfButton.text(
+                label: '代码',
+                size: FfButtonSize.sm,
+                textColor: _propsViewMode == 1 ? ext.brandColor : ext.icon.secondary, // FIXME
+                onTap: () => setState(() => _propsViewMode = 1),
+              ),
+            ],
           ),
           const SizedBox(height: 8),
-          // Config editor
-          FfText('配置 (JSON)', fontSize: 12, fontWeight: FontWeight.w600),
-          const SizedBox(height: 4),
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: ext.borderColor),
-              ),
-              padding: const EdgeInsets.all(8),
-              child: SingleChildScrollView(
-                child: Text(
-                  const JsonEncoder.withIndent('  ').convert(node.config),
-                  style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: theme.colorScheme.onSurface),
-                ),
-              ),
-            ),
+          // Label field
+          FfTextField(
+            controller: TextEditingController(text: node.label),
+            labelText: '标签',
+            onChanged: (v) => node.label = v,
           ),
+          const SizedBox(height: 8),
+          // Config area
+          _propsViewMode == 0
+              ? Expanded(child: _buildSchemaForm(node, typeDef, theme, ext))
+              : Expanded(child: _buildJsonConfigEditor(node, theme, ext)),
         ],
       ),
+    );
+  }
+
+  Widget _buildSchemaForm(WorkflowNode node, NodeTypeDef? typeDef, ThemeData theme, FlowForgeThemeExtension ext) {
+    if (typeDef == null || typeDef.configSchema == null) {
+      return Center(child: FfText('无可编辑的配置项', fontSize: 12, color: ext.icon.disabled));
+    }
+
+    final schema = typeDef.configSchema;
+    final props = schema['properties'] as Map<String, dynamic>? ?? {};
+    final required = (schema['required'] as List?)?.cast<String>() ?? [];
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: props.entries.map((entry) {
+          final key = entry.key;
+          final prop = entry.value as Map<String, dynamic>;
+          final type = prop['type'] as String? ?? 'string';
+          final title = prop['title'] ?? key;
+          final isRequired = required.contains(key);
+          final currentValue = node.config[key];
+
+          if (type == 'string' && prop['enum'] != null) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: FfDropdown<String>(
+                value: currentValue?.asString ?? (prop['default'] as String?),
+                hintText: '$title${isRequired ? " *" : ""}',
+                items: (prop['enum'] as List).map((e) =>
+                    FfDropdownItem(value: e.toString(), label: e.toString())).toList(),
+                onChanged: (v) {
+                  setState(() { node.config[key] = v; });
+                },
+              ),
+            );
+          }
+
+          if (type == 'boolean') {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: FfToggle(
+                value: currentValue?.asBool ?? (prop['default'] == true),
+                label: '$title${isRequired ? " *" : ""}',
+                onChanged: (v) {
+                  setState(() { node.config[key] = v; });
+                },
+              ),
+            );
+          }
+
+          if (type == 'number' || type == 'integer') {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: FfTextField(
+                controller: TextEditingController(text: currentValue?.toString() ?? prop['default']?.toString() ?? ''),
+                labelText: '$title${isRequired ? " *" : ""}',
+                onChanged: (v) {
+                  final parsed = double.tryParse(v);
+                  setState(() { node.config[key] = parsed ?? v; });
+                },
+              ),
+            );
+          }
+
+          // default: string / textarea
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: FfTextField(
+              controller: TextEditingController(text: currentValue?.toString() ?? prop['default']?.toString() ?? ''),
+              labelText: '$title${isRequired ? " *" : ""}',
+              maxLines: type == 'object' || type == 'array' ? 3 : 1,
+              onChanged: (v) {
+                setState(() { node.config[key] = v; });
+              },
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildJsonConfigEditor(WorkflowNode node, ThemeData theme, FlowForgeThemeExtension ext) {
+    final controller = TextEditingController(
+      text: const JsonEncoder.withIndent('  ').convert(node.config),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            FfButton.text(
+              label: '应用',
+              size: FfButtonSize.sm,
+              textColor: Colors.green,
+              onTap: () {
+                try {
+                  final parsed = jsonDecode(controller.text);
+                  if (parsed is Map<String, dynamic>) {
+                    setState(() {
+                      node.config = parsed.map((k, v) => MapEntry(k, v));
+                    });
+                    if (mounted) {
+                      FfToast.show(context, message: '配置已应用', type: FfToastType.success);
+                    }
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    FfToast.show(context, message: 'JSON 解析失败: $e', type: FfToastType.error);
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: ext.borderColor),
+            ),
+            padding: const EdgeInsets.all(8),
+            child: TextField(
+              controller: controller,
+              maxLines: null,
+              expands: true,
+              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+              decoration: const InputDecoration(border: InputBorder.none, contentPadding: EdgeInsets.zero),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -556,9 +701,9 @@ class _EditorPageState extends State<EditorPage> {
         // View toggle
         SegmentedButton<int>(
           segments: const [
-            ButtonSegment(value: 0, icon: Icon(Icons.dashboard, size: 16), label: Text('画布')),
-            ButtonSegment(value: 1, icon: Icon(Icons.list, size: 16), label: Text('列表')),
-            ButtonSegment(value: 2, icon: Icon(Icons.code, size: 16), label: Text('代码')),
+            ButtonSegment(value: 0, icon: FfSvg(FfIconName.dashboard, size: 16), label: Text('画布')),
+            ButtonSegment(value: 1, icon: FfSvg(FfIconName.list, size: 16), label: Text('列表')),
+            ButtonSegment(value: 2, icon: FfSvg(FfIconName.code, size: 16), label: Text('代码')),
           ],
           selected: {_viewMode},
           onSelectionChanged: (v) {
@@ -588,7 +733,7 @@ class _EditorPageState extends State<EditorPage> {
                 if (_isSaving)
                   const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                 else
-                  const Icon(Icons.save, size: 16),
+                  const FfSvg(FfIconName.save, size: 16),
                 const SizedBox(width: 4),
                 FfText('保存', fontSize: 12),
               ],
@@ -606,7 +751,7 @@ class _EditorPageState extends State<EditorPage> {
                 if (_isExecuting)
                   const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
                 else
-                  Icon(Icons.play_arrow, size: 16, color: Colors.green),
+                  FfSvg(FfIconName.play, size: 16, color: Colors.green),
                 const SizedBox(width: 4),
                 FfText('执行', fontSize: 12),
               ],
@@ -657,7 +802,7 @@ class _EditorPageState extends State<EditorPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.edit_outlined, size: 64, color: ext.brandColor.withValues(alpha: 0.3)),
+          FfSvg(FfIconName.edit, size: 64, color: ext.brandColor.withValues(alpha: 0.3)),
           const SizedBox(height: FlowForgeSpacing.md),
           FfText('选择一个工作流开始编辑', fontSize: 16,
             color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
@@ -671,7 +816,7 @@ class _EditorPageState extends State<EditorPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+          const FfSvg(FfIconName.error, size: 48, color: Colors.red),
           const SizedBox(height: 12),
           Text(_error!, style: const TextStyle(color: Colors.red)),
           const SizedBox(height: 12),
@@ -682,29 +827,5 @@ class _EditorPageState extends State<EditorPage> {
         ],
       ),
     );
-  }
-
-  IconData _nodeIcon(String type) {
-    switch (type) {
-      case 'log': return Icons.text_snippet;
-      case 'http': return Icons.http;
-      case 'delay': return Icons.timer;
-      case 'shell': return Icons.terminal;
-      case 'script': return Icons.code;
-      case 'webhook': return Icons.webhook;
-      default: return Icons.circle;
-    }
-  }
-
-  Color _nodeColor(String type) {
-    switch (type) {
-      case 'log': return Colors.teal;
-      case 'http': return Colors.blue;
-      case 'delay': return Colors.orange;
-      case 'shell': return Colors.red;
-      case 'script': return Colors.purple;
-      case 'webhook': return Colors.green;
-      default: return Colors.grey;
-    }
   }
 }

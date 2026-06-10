@@ -1,8 +1,14 @@
-//! Webhook trigger — listens for incoming HTTP requests.
+//! Webhook node — receives external HTTP triggers.
+//!
+//! When a POST/GET request arrives at /api/webhook/:workflow_id/:node_id,
+//! the payload is stored in WebhookStore. This node pops the pending payload
+//! and outputs it during execution.
+
 use async_trait::async_trait;
 use std::collections::HashMap;
-use crate::error::FlowResult;
+
 use crate::engine::workflow::Node;
+use crate::error::{FlowError, FlowResult};
 use crate::nodes::traits::{NodeExecutor, NodeTypeDef, PortDef};
 
 #[derive(Default)]
@@ -14,21 +20,80 @@ impl NodeExecutor for WebhookNode {
         NodeTypeDef {
             type_name: "webhook".to_string(),
             display_name: "Webhook".to_string(),
-            description: "监听 HTTP 请求触发工作流".to_string(),
+            description: "接收外部 HTTP 请求作为触发器".to_string(),
             category: "触发器".to_string(),
             inputs: vec![],
             outputs: vec![
                 PortDef { label: "body".to_string(), data_type: "object".to_string(), required: false },
                 PortDef { label: "headers".to_string(), data_type: "object".to_string(), required: false },
+                PortDef { label: "method".to_string(), data_type: "string".to_string(), required: false },
+                PortDef { label: "has_payload".to_string(), data_type: "boolean".to_string(), required: false },
             ],
-            config_schema: serde_json::json!({"type": "object", "properties": {"path": {"type": "string"}, "method": {"type": "string", "default": "POST"}}}),
+            config_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string", "description": "描述此 Webhook 的用途"}
+                }
+            }),
         }
     }
 
-    async fn execute(&self, _node: &Node, _ctx: &crate::nodes::traits::NodeContext, _config: serde_json::Value, _inputs: HashMap<String, serde_json::Value>) -> FlowResult<HashMap<String, serde_json::Value>> {
-        let mut out = HashMap::new();
-        out.insert("body".to_string(), serde_json::json!({}));
-        out.insert("headers".to_string(), serde_json::json!({}));
-        Ok(out)
+    async fn execute(
+        &self,
+        node: &Node,
+        ctx: &crate::nodes::traits::NodeContext,
+        _config: serde_json::Value,
+        _inputs: HashMap<String, serde_json::Value>,
+    ) -> FlowResult<HashMap<String, serde_json::Value>> {
+        let mut outputs = HashMap::new();
+
+        // Try to get the pending webhook payload from the store
+        // The store key is computed dynamically — we look it up from the executor's
+        // webhook_store using a key convention: "workflow_id:node_id".
+        // Since we don't know the workflow_id at node level, we scan for any key
+        // ending with ":node_id".
+        if let Some(store) = &ctx.webhook_store {
+            let mut store_guard = store.lock().map_err(|e| FlowError::NodeExecutionFailed {
+                node_id: node.id.clone(),
+                detail: format!("webhook store lock error: {}", e),
+            })?;
+
+            // Find the first key matching this node_id
+            let matching_key = store_guard
+                .keys()
+                .find(|k| k.ends_with(&format!(":{}", node.id)))
+                .cloned();
+
+            if let Some(key) = matching_key {
+                if let Some(payloads) = store_guard.get_mut(&key) {
+                    if let Some(payload) = payloads.pop() {
+                        if payloads.is_empty() {
+                            store_guard.remove(&key);
+                        }
+                        drop(store_guard);
+
+                        let body = payload.get("body").cloned().unwrap_or(serde_json::json!({}));
+                        let headers = payload.get("headers").cloned().unwrap_or(serde_json::json!({}));
+                        let method = payload.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+                        outputs.insert("body".into(), body);
+                        outputs.insert("headers".into(), headers);
+                        outputs.insert("method".into(), serde_json::json!(method));
+                        outputs.insert("has_payload".into(), serde_json::json!(true));
+
+                        tracing::info!("Webhook node {}: processed payload", node.id);
+                        return Ok(outputs);
+                    }
+                }
+            }
+        }
+
+        // No pending payload — return empty
+        outputs.insert("body".into(), serde_json::json!({}));
+        outputs.insert("headers".into(), serde_json::json!({}));
+        outputs.insert("method".into(), serde_json::json!(""));
+        outputs.insert("has_payload".into(), serde_json::json!(false));
+
+        Ok(outputs)
     }
 }

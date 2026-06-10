@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use crate::auth::AuthState;
 use crate::engine::storage::WorkflowStorage;
 use crate::nodes::registry::NodeRegistry;
 use crate::webbridge::WebBridgeState;
@@ -20,6 +21,13 @@ pub struct AppState {
 
     /// WebBridge — Chrome extension relay.
     pub webbridge: WebBridgeState,
+
+    /// Pending webhook payloads (keyed by "workflow_id:node_id").
+    /// Each value is a JSON object: { "body", "headers", "method", "received_at" }.
+    pub webhook_store: Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>,
+
+    /// Authentication database.
+    pub auth_db: AuthState,
 
     /// Server configuration.
     pub _config: ServerConfig,
@@ -48,10 +56,24 @@ impl AppState {
         let storage = WorkflowStorage::new(&config.data_dir);
         storage.init().expect("Failed to initialize storage");
 
+        // Migrate old JSON files into SQLite
+        match storage.migrate_from_files() {
+            Ok(0) => {}
+            Ok(n) => tracing::info!("Migrated {} workflows from JSON files to SQLite", n),
+            Err(e) => tracing::warn!("Migration from files failed (non-fatal): {}", e),
+        }
+
+        let auth_db = Arc::new(
+            crate::auth::AuthDb::open(&format!("{}/users.db", config.data_dir))
+                .expect("Failed to initialize auth database"),
+        );
+
         Self {
             node_registry: Arc::new(NodeRegistry::new()),
             storage: Arc::new(storage),
             webbridge: WebBridgeState::new(),
+            webhook_store: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            auth_db,
             _config: config,
         }
     }

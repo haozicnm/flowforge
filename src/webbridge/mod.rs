@@ -130,7 +130,8 @@ impl WebBridgeState {
         }
 
         // Send the command via WebSocket
-        let msg_text = serde_json::to_string(&command).unwrap();
+        let msg_text = serde_json::to_string(&command)
+            .map_err(|e| format!("failed to serialize command: {}", e))?;
         {
             let mut sender_guard = self.sender.lock().await;
             let sender = sender_guard

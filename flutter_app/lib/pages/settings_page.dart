@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import '../theme/flowforge_theme.dart';
 import '../widgets/ff_widgets.dart';
+import '../widgets/flowforge_icons.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -31,21 +32,21 @@ class SettingsPage extends StatelessWidget {
           // Settings items
           _buildSettingItem(
             context: context,
-            icon: Icons.info_outline,
+            icon: FfIconName.info,
             title: '版本',
-            subtitle: 'FlowForge v0.1.0',
+            subtitle: 'FlowForge v1.0.0',
           ),
           const SizedBox(height: FlowForgeSpacing.sm),
           _buildSettingItem(
             context: context,
-            icon: Icons.dns_outlined,
+            icon: FfIconName.settings,
             title: '服务器地址',
             subtitle: 'http://127.0.0.1:19529',
           ),
           const SizedBox(height: FlowForgeSpacing.sm),
           _buildSettingItem(
             context: context,
-            icon: Icons.palette_outlined,
+            icon: FfIconName.settings,
             title: '主题',
             subtitle: '跟随系统',
           ),
@@ -56,7 +57,7 @@ class SettingsPage extends StatelessWidget {
 
   Widget _buildSettingItem({
     required BuildContext context,
-    required IconData icon,
+    required FfIconName icon,
     required String title,
     required String subtitle,
   }) {
@@ -73,7 +74,7 @@ class SettingsPage extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: ext.brandColor),
+            FfSvg(icon, size: 20, color: ext.brandColor),
             const SizedBox(width: FlowForgeSpacing.md),
             Expanded(
               child: Column(
@@ -89,8 +90,7 @@ class SettingsPage extends StatelessWidget {
                 ],
               ),
             ),
-            Icon(Icons.chevron_right,
-                size: 16,
+            FfSvg(FfIconName.chevronRight, size: 16,
                 color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
           ],
         ),

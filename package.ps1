@@ -8,7 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $base = "C:\Users\haozi\dev\flowforge"
-$version = "0.1.0"
+$version = "1.0.0"
 
 Write-Host ""
 Write-Host "  FlowForge Packager v$version" -ForegroundColor Cyan

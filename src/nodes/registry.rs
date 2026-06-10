@@ -1,7 +1,7 @@
 //! Node registry — type_name → NodeExecutor implementation.
 //!
 //! Rule: All node types must be registered here at startup.
-//! No dynamic loading, no reflection. Explicit registration.
+//! Supports both built-in (Arc) and dynamic plugins (Box→Arc).
 
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -55,16 +55,37 @@ impl NodeRegistry {
         registry.register_builtin::<super::docx_read_node::DocxReadNode>();
         registry.register_builtin::<super::docx_create_node::DocxCreateNode>();
 
+        // === Database ===
+        registry.register_builtin::<super::database_node::DatabaseNode>();
+
+        // === Notification ===
+        registry.register_builtin::<super::notification_node::NotificationNode>();
+
+        // === File ===
+        registry.register_builtin::<super::file_node::FileNode>();
+
+        // === Cron / schedule ===
+        registry.register_builtin::<super::cron_node::CronNode>();
+
         registry
     }
 
-    /// Register a node type.
+    /// Register a node type (built-in).
     pub fn register<E: NodeExecutor + 'static>(&self, executor: E) {
         let type_name = executor.type_def().type_name.clone();
         self.executors
             .write()
             .expect("registry lock poisoned")
             .insert(type_name, Arc::new(executor));
+    }
+
+    /// Register a node type from a Box (for dynamic plugins).
+    pub fn register_boxed(&self, executor: Box<dyn NodeExecutor>) {
+        let type_name = executor.type_def().type_name.clone();
+        self.executors
+            .write()
+            .expect("registry lock poisoned")
+            .insert(type_name, Arc::from(executor));
     }
 
     fn register_builtin<E: NodeExecutor + Default + 'static>(&self) {

@@ -34,3 +34,15 @@ pub mod excel_write_node;
 // Word (.docx)
 pub mod docx_read_node;
 pub mod docx_create_node;
+
+// Database
+pub mod database_node;
+
+// Notification
+pub mod notification_node;
+
+// File operations
+pub mod file_node;
+
+// Cron / schedule
+pub mod cron_node;

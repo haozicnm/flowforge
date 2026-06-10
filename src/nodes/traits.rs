@@ -8,11 +8,14 @@
 //! Rule: Nodes do NOT resolve their own variables. The executor calls
 //! resolver::resolve_node_config() before passing config to execute().
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::error::FlowResult;
 use crate::engine::workflow::Node;
+use crate::nodes::registry::NodeRegistry;
 use crate::webbridge::WebBridgeState;
 
 /// Runtime context passed to node execute().
@@ -21,17 +24,28 @@ use crate::webbridge::WebBridgeState;
 pub struct NodeContext {
     /// WebBridge state for browser automation nodes. None if not configured.
     pub webbridge: Option<WebBridgeState>,
+
+    /// Node registry for sub-execution (used by Loop node, etc.).
+    pub node_registry: Option<Arc<NodeRegistry>>,
+
+    /// Webhook store for reading incoming webhook payloads.
+    pub webhook_store: Option<Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>>,
 }
 
 impl NodeContext {
     /// Create a context with no services (for non-browser nodes).
     pub fn empty() -> Self {
-        Self { webbridge: None }
+        Self { webbridge: None, node_registry: None, webhook_store: None }
     }
 
     /// Create a context with WebBridge support.
     pub fn with_webbridge(webbridge: WebBridgeState) -> Self {
-        Self { webbridge: Some(webbridge) }
+        Self { webbridge: Some(webbridge), node_registry: None, webhook_store: None }
+    }
+
+    /// Create a context with NodeRegistry (for nodes that need sub-execution).
+    pub fn with_registry(registry: Arc<NodeRegistry>) -> Self {
+        Self { webbridge: None, node_registry: Some(registry), webhook_store: None }
     }
 }
 

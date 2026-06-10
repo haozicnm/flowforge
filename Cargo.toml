@@ -1,6 +1,6 @@
 [package]
 name = "flowforge"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "Visual workflow automation engine"
 license = "MIT"
@@ -63,3 +63,11 @@ umya-spreadsheet = "1"
 # ZIP support (for .docx read/write)
 zip = "2"
 quick-xml = "0.36"
+
+# Auth
+rusqlite = { version = "0.31", features = ["bundled"] }
+jsonwebtoken = "9"
+bcrypt = "0.15"
+
+# Dynamic plugin loading
+libloading = "0.8"

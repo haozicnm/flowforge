@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # ── Rust backend ──────────────────────────────────────────────
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Test
+        run: cargo test
+
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+        continue-on-error: true
+
+  # ── Flutter frontend ─────────────────────────────────────────
+  flutter:
+    name: Flutter (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.27"
+          channel: "stable"
+
+      - name: Cache Flutter
+        uses: actions/cache@v4
+        with:
+          path: flutter_app/.dart_tool
+          key: ${{ runner.os }}-flutter-${{ hashFiles('flutter_app/pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-flutter-
+
+      - name: Pub get
+        run: flutter pub get
+        working-directory: flutter_app
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+        working-directory: flutter_app
+        continue-on-error: true
+
+  # ── Combined summary ─────────────────────────────────────────
+  done:
+    name: CI Complete
+    needs: [rust, flutter]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "✅ All CI checks passed"

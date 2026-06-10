@@ -92,7 +92,11 @@ impl NodeExecutor for ExcelWriteNode {
                 node_id: "excel_write".to_string(),
                 detail: "failed to create sheet".to_string(),
             })?;
-            book.get_sheet_by_name_mut(sheet_name).unwrap()
+            book.get_sheet_by_name_mut(sheet_name)
+                .ok_or_else(|| FlowError::NodeExecutionFailed {
+                    node_id: "excel_write".into(),
+                    detail: format!("sheet '{}' not found after creation", sheet_name),
+                })?
         };
 
         let mut row_num: u32 = 1;
