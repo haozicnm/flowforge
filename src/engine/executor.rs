@@ -65,8 +65,8 @@ impl ExecutionState {
 #[derive(Debug, Clone)]
 pub enum ExecutionEvent {
     NodeStarted { _node_id: String },
-    NodeCompleted { _node_id: String, _outputs: HashMap<String, serde_json::Value> },
-    NodeFailed { _node_id: String, _error: String },
+    NodeCompleted { _node_id: String, _outputs: HashMap<String, serde_json::Value>, _duration_ms: u64 },
+    NodeFailed { _node_id: String, _error: String, _duration_ms: u64 },
     WorkflowCompleted,
     _WorkflowFailed { _error: String },
 }
@@ -175,6 +175,7 @@ impl Executor {
             self.send_event(event_tx, ExecutionEvent::NodeFailed {
                 _node_id: node_id.to_string(),
                 _error: format!("validation failed: {}", msg),
+                _duration_ms: 0,
             }).await;
 
             return Err(FlowError::ExecutionError(format!(
@@ -188,7 +189,8 @@ impl Executor {
             self.collect_inputs(node_id, edges, &state_guard)
         };
 
-        // Execute the node
+        // Execute the node with timing
+        let start = std::time::Instant::now();
         let mut ctx = match &self.webbridge {
             Some(wb) => NodeContext::with_webbridge(wb.clone()),
             None => NodeContext::empty(),
@@ -198,6 +200,7 @@ impl Executor {
 
         match executor.execute(node, &ctx, resolved_config, inputs).await {
             Ok(outputs) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
                 let mut s = state.write().await;
                 s.node_outputs.insert(node_id.to_string(), outputs.clone());
                 s.completed.push(node_id.to_string());
@@ -206,9 +209,11 @@ impl Executor {
                 self.send_event(event_tx, ExecutionEvent::NodeCompleted {
                     _node_id: node_id.to_string(),
                     _outputs: outputs,
+                    _duration_ms: duration_ms,
                 }).await;
             }
             Err(e) => {
+                let duration_ms = start.elapsed().as_millis() as u64;
                 let mut s = state.write().await;
                 s.failed.push(node_id.to_string());
                 s.running.retain(|id| id != node_id);
@@ -216,6 +221,7 @@ impl Executor {
                 self.send_event(event_tx, ExecutionEvent::NodeFailed {
                     _node_id: node_id.to_string(),
                     _error: e.to_string(),
+                    _duration_ms: duration_ms,
                 }).await;
 
                 return Err(e);
@@ -291,8 +297,10 @@ impl Executor {
             let ctx_clone = ctx.clone();
             join_set.spawn(async move {
                 let node_id = node.id.clone();
+                let start = std::time::Instant::now();
                 let result = executor.execute(&node, &ctx_clone, resolved_config, inputs).await;
-                (node_id, result)
+                let duration_ms = start.elapsed().as_millis() as u64;
+                (node_id, result, duration_ms)
             });
         }
 
@@ -300,7 +308,7 @@ impl Executor {
         let mut any_error: Option<(String, FlowError)> = None;
         while let Some(result) = join_set.join_next().await {
             match result {
-                Ok((node_id, Ok(outputs))) => {
+                Ok((node_id, Ok(outputs), duration_ms)) => {
                     let mut s = state.write().await;
                     s.node_outputs.insert(node_id.clone(), outputs.clone());
                     s.completed.push(node_id.clone());
@@ -308,15 +316,17 @@ impl Executor {
                     self.send_event(event_tx, ExecutionEvent::NodeCompleted {
                         _node_id: node_id,
                         _outputs: outputs,
+                        _duration_ms: duration_ms,
                     }).await;
                 }
-                Ok((node_id, Err(e))) => {
+                Ok((node_id, Err(e), duration_ms)) => {
                     let mut s = state.write().await;
                     s.failed.push(node_id.clone());
                     s.running.retain(|id| *id != node_id);
                     self.send_event(event_tx, ExecutionEvent::NodeFailed {
                         _node_id: node_id.clone(),
                         _error: e.to_string(),
+                        _duration_ms: duration_ms,
                     }).await;
                     any_error = Some((node_id, e));
                 }

@@ -423,11 +423,11 @@ fn event_to_json(event: crate::engine::executor::ExecutionEvent) -> serde_json::
         ExecutionEvent::NodeStarted { _node_id } => serde_json::json!({
             "type": "node_started", "node_id": _node_id
         }),
-        ExecutionEvent::NodeCompleted { _node_id, _outputs } => serde_json::json!({
-            "type": "node_completed", "node_id": _node_id, "outputs": _outputs
+        ExecutionEvent::NodeCompleted { _node_id, _outputs, _duration_ms } => serde_json::json!({
+            "type": "node_completed", "node_id": _node_id, "outputs": _outputs, "duration_ms": _duration_ms
         }),
-        ExecutionEvent::NodeFailed { _node_id, _error } => serde_json::json!({
-            "type": "node_failed", "node_id": _node_id, "error": _error
+        ExecutionEvent::NodeFailed { _node_id, _error, _duration_ms } => serde_json::json!({
+            "type": "node_failed", "node_id": _node_id, "error": _error, "duration_ms": _duration_ms
         }),
         ExecutionEvent::WorkflowCompleted => serde_json::json!({
             "type": "workflow_completed"
