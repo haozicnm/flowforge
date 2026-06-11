@@ -1,0 +1,23 @@
+name: "Setup Flutter"
+description: "Setup Flutter SDK with caching"
+inputs:
+  cache:
+    description: "Enable pub cache"
+    default: "true"
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        channel: stable
+
+    - name: Cache pub dependencies
+      if: inputs.cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.pub-cache
+          flutter_app/.dart_tool
+        key: ${{ runner.os }}-flutter-${{ hashFiles('flutter_app/pubspec.yaml') }}
+        restore-keys: ${{ runner.os }}-flutter-

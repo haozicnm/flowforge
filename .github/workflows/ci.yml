@@ -2,13 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [master, main, dev]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   # ── Rust backend ──────────────────────────────────────────────
@@ -16,20 +22,14 @@ jobs:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Setup Rust cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
-          restore-keys: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}-
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
 
       - name: Build
         run: cargo build --release
@@ -39,29 +39,20 @@ jobs:
 
       - name: Clippy
         run: cargo clippy -- -D warnings
-        continue-on-error: true
 
   # ── Flutter frontend ─────────────────────────────────────────
   flutter:
     name: Flutter (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          channel: "stable"
-
-      - name: Cache Flutter
-        uses: actions/cache@v4
-        with:
-          path: flutter_app/.dart_tool
-          key: ${{ runner.os }}-flutter-${{ hashFiles('flutter_app/pubspec.lock') }}
-          restore-keys: ${{ runner.os }}-flutter-
+        uses: ./.github/actions/setup-flutter
 
       - name: Pub get
         run: flutter pub get
@@ -69,6 +60,10 @@ jobs:
 
       - name: Analyze
         run: flutter analyze --no-fatal-infos
+        working-directory: flutter_app
+
+      - name: Test
+        run: flutter test
         working-directory: flutter_app
         continue-on-error: true
 
@@ -78,4 +73,4 @@ jobs:
     needs: [rust, flutter]
     runs-on: ubuntu-latest
     steps:
-      - run: echo "✅ All CI checks passed"
+      - run: echo "All CI checks passed"
