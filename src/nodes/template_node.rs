@@ -61,8 +61,56 @@ impl NodeExecutor for TemplateNode {
 
         tracing::info!("Template: rendered {} chars", result.len());
         let mut outputs = HashMap::new();
-        outputs.insert("out".to_string(), serde_json::json!(result));
+        outputs.insert("out".to_string(), serde_json::Value::String(result));
         Ok(outputs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "template".to_string(),
+            label: "Test Template".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_template_basic() {
+        let node = make_node("tpl_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"template": "Hello {{name}}"});
+        let mut inputs = HashMap::new();
+        inputs.insert("vars".to_string(), serde_json::json!({"name": "World"}));
+        let result = TemplateNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "Hello World");
+    }
+
+    #[tokio::test]
+    async fn test_template_multiple_vars() {
+        let node = make_node("tpl_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"template": "{{greeting}} {{name}}!"});
+        let mut inputs = HashMap::new();
+        inputs.insert("vars".to_string(), serde_json::json!({"greeting": "Hi", "name": "Alice"}));
+        let result = TemplateNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "Hi Alice!");
+    }
+
+    #[tokio::test]
+    async fn test_template_no_vars() {
+        let node = make_node("tpl_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"template": "No variables here"});
+        let inputs = HashMap::new();
+        let result = TemplateNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "No variables here");
     }
 }
 

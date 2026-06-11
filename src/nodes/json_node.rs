@@ -114,6 +114,55 @@ impl NodeExecutor for JsonNode {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "json".to_string(),
+            label: "Test JSON".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_json_parse() {
+        let node = make_node("json_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operation": "parse"});
+        let mut inputs = HashMap::new();
+        inputs.insert("in".to_string(), serde_json::json!("{\"key\": \"value\"}"));
+        let result = JsonNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"]["key"], "value");
+    }
+
+    #[tokio::test]
+    async fn test_json_stringify() {
+        let node = make_node("json_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operation": "stringify"});
+        let mut inputs = HashMap::new();
+        inputs.insert("in".to_string(), serde_json::json!({"key": "value"}));
+        let result = JsonNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert!(result["out"].as_str().unwrap().contains("key"));
+    }
+
+    #[tokio::test]
+    async fn test_json_extract() {
+        let node = make_node("json_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operation": "extract", "path": "key"});
+        let mut inputs = HashMap::new();
+        inputs.insert("in".to_string(), serde_json::json!({"key": "value"}));
+        let result = JsonNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "value");
+    }
+}
+
 /// Extract value using dot-notation path: "data.items.0.name"
 fn extract_path(value: &serde_json::Value, path: &str) -> serde_json::Value {
     if path.is_empty() {

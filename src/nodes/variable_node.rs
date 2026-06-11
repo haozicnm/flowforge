@@ -85,3 +85,60 @@ impl NodeExecutor for VariableNode {
         Ok(outputs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "variable".to_string(),
+            label: "Test Var".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_variable_passthrough() {
+        let node = make_node("var_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"value": "hello"});
+        let inputs = HashMap::new();
+        let result = VariableNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "hello");
+    }
+
+    #[tokio::test]
+    async fn test_variable_cast_number() {
+        let node = make_node("var_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"value": 42, "cast_to": "number"});
+        let inputs = HashMap::new();
+        let result = VariableNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"].as_f64().unwrap(), 42.0);
+    }
+
+    #[tokio::test]
+    async fn test_variable_cast_boolean() {
+        let node = make_node("var_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"value": "true", "cast_to": "boolean"});
+        let inputs = HashMap::new();
+        let result = VariableNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], true);
+    }
+
+    #[tokio::test]
+    async fn test_variable_from_input() {
+        let node = make_node("var_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({});
+        let mut inputs = HashMap::new();
+        inputs.insert("in".to_string(), serde_json::json!("from_input"));
+        let result = VariableNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "from_input");
+    }
+}

@@ -33,7 +33,7 @@ impl NodeExecutor for LogNode {
         // Read message from config, fall back to input
         let msg = config["message"].as_str()
             .map(|s| s.to_string())
-            .or_else(|| inputs.get("in").map(|v| v.to_string()))
+            .or_else(|| inputs.get("in").and_then(|v| v.as_str()).map(|s| s.to_string()))
             .unwrap_or_default();
 
         match level {
@@ -46,5 +46,68 @@ impl NodeExecutor for LogNode {
         let mut outputs = HashMap::new();
         outputs.insert("out".to_string(), serde_json::Value::String(msg));
         Ok(outputs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "log".to_string(),
+            label: "Test Log".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    fn make_ctx() -> NodeContext {
+        NodeContext::empty()
+    }
+
+    #[tokio::test]
+    async fn test_log_with_config_message() {
+        let node = make_node("test_log");
+        let ctx = make_ctx();
+        let config = serde_json::json!({"message": "Hello World", "level": "info"});
+        let inputs = HashMap::new();
+
+        let result = LogNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "Hello World");
+    }
+
+    #[tokio::test]
+    async fn test_log_with_input() {
+        let node = make_node("test_log");
+        let ctx = make_ctx();
+        let config = serde_json::json!({"level": "info"});
+        let mut inputs = HashMap::new();
+        inputs.insert("in".to_string(), serde_json::json!("Input data"));
+
+        let result = LogNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "Input data");
+    }
+
+    #[tokio::test]
+    async fn test_log_empty() {
+        let node = make_node("test_log");
+        let ctx = make_ctx();
+        let config = serde_json::json!({});
+        let inputs = HashMap::new();
+
+        let result = LogNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["out"], "");
+    }
+
+    #[tokio::test]
+    async fn test_log_type_def() {
+        let def = LogNode.type_def();
+        assert_eq!(def.type_name, "log");
+        assert_eq!(def.display_name, "日志输出");
+        assert_eq!(def.inputs.len(), 1);
+        assert_eq!(def.outputs.len(), 1);
     }
 }
