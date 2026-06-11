@@ -72,6 +72,9 @@ impl NodeRegistry {
         // === Media ===
         registry.register_builtin::<super::image_process_node::ImageProcessNode>();
 
+        // === Document ===
+        registry.register_builtin::<super::pdf_extract_node::PdfExtractNode>();
+
         // === File ===
         registry.register_builtin::<super::file_node::FileNode>();
 

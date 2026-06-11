@@ -52,6 +52,9 @@ pub mod ftp_download_node;
 // Media
 pub mod image_process_node;
 
+// Document
+pub mod pdf_extract_node;
+
 // File operations
 pub mod file_node;
 

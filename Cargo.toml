@@ -57,6 +57,7 @@ imap = "2.4"
 native-tls = "0.2"
 suppaftp = "5.0"
 image = "0.25"
+pdf-extract = "0.7"
 futures-util = "0.3"
 
 # Excel read (calamine)
