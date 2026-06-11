@@ -65,6 +65,9 @@ impl NodeRegistry {
         registry.register_builtin::<super::email_send_node::EmailSendNode>();
         registry.register_builtin::<super::email_read_node::EmailReadNode>();
 
+        // === FTP ===
+        registry.register_builtin::<super::ftp_upload_node::FtpUploadNode>();
+
         // === File ===
         registry.register_builtin::<super::file_node::FileNode>();
 
