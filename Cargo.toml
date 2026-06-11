@@ -70,6 +70,7 @@ umya-spreadsheet = "1"
 # ZIP support (for .docx read/write)
 zip = "2"
 quick-xml = "0.36"
+csv = "1.3"
 
 # Auth
 rusqlite = { version = "0.31", features = ["bundled"] }

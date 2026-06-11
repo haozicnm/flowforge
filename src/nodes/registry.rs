@@ -77,6 +77,7 @@ impl NodeRegistry {
 
         // === Document ===
         registry.register_builtin::<super::pdf_extract_node::PdfExtractNode>();
+        registry.register_builtin::<super::transform_node::TransformNode>();
 
         // === File ===
         registry.register_builtin::<super::file_node::FileNode>();
