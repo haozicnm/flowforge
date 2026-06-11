@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowforge-windows
+          path: target/release/flowforge.exe
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowforge-linux
+          path: target/release/flowforge
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowforge-macos
+          path: target/release/flowforge
+
+  release:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/flowforge-windows/flowforge.exe
+            artifacts/flowforge-linux/flowforge
+            artifacts/flowforge-macos/flowforge
+          generate_release_notes: true
