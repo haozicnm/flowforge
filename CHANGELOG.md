@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.1.0] — 2026-06-10
+
+### 🚀 优化迭代 — Phase 2~5 + 代码质量全面清零
+
+v1.0.0 后的首轮迭代，聚焦节点系统增强、前端体验升级、调度/网关/转换等平台功能，以及代码质量全面清零。
+
+### ✨ 新增功能
+
+#### 节点系统（35 种节点）
+- **新增 7 种节点**：email_send（SMTP）、email_read（IMAP）、ftp_upload、ftp_download、image_process（图片处理）、pdf_extract（PDF 文本提取）、transform（JSON/CSV/XML 互转）
+- **节点验证**：`validate_config()` 在执行前校验配置
+- **节点版本管理**：`version()` trait 支持语义化版本
+- **节点并行执行**：无依赖节点自动并行
+- **节点缓存框架**：缓存 TTL 配置
+- **混合变量解析**：占位符 + JSONPath + 嵌套引用
+
+#### 调度与网关
+- **Cron 调度系统**：`cron` crate 表达式解析，后台每秒 tick，持久化到 JSON
+- **API 网关**：工作流发布为 REST API，支持 API Key 认证 + 频率限制
+
+#### 前端体验（Phase 3）
+- **可视化画布升级**：hover 数据查看、Ctrl+F 节点搜索、节点分组（Shift 多选 + Ctrl+G）
+- **撤销/重做**、节点分类面板、断点支持
+- **单步执行**：后端 `execute_step()` + 前端 F10 快捷键
+- **错误高亮**：失败节点红色标记 + 错误定位
+- **节点执行耗时**：前端显示 duration_ms
+
+#### OpenAPI 文档
+- **自动生成**：`GET /api/openapi.json` — 从代码自动提取路由/参数/响应
+- **Swagger UI**：`GET /api/docs` — 交互式 API 测试界面
+
+#### 生产部署
+- **Docker**：多阶段构建（78MB runtime），docker-compose 一键启动
+- **systemd 服务**：`flowforge.service` 配置文件
+- **CLI 参数**：`--port`、`--data-dir`、`--bind`（clap 解析）
+
+#### WebBridge 扩展
+- **UI 重设计**：对齐 FlowForge 设计系统（#1A1A2E 暗紫蓝 + #00B4D8 品牌青色）
+- **动画状态指示**、信息网格布局、底部链接
+
+### 🔧 代码质量
+- **Rust clippy**：34 warnings → 0（`-D warnings` 零容忍）
+- **Flutter analyze**：33 issues → 0（`No issues found`）
+- **测试**：209 个全部通过（95 + 95 + 8 + 11）
+- **生产代码零 unwrap()**
+
+### 📊 统计
+- **源码**：~10,200 行 Rust
+- **节点**：35 种
+- **提交**：57 个（v1.0.0 后）
+
+---
+
+
 ## [1.0.0] — 2025-06-10
 
 ### 🚀 Platform-grade v1.0 Release
