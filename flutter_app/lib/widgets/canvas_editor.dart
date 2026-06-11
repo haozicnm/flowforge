@@ -1,12 +1,30 @@
-// Visual canvas editor — drag nodes, draw edges, zoom/pan.
+// Visual canvas editor — drag nodes, draw edges, zoom/pan, undo/redo, minimap.
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../api/flowforge_api.dart';
 import '../theme/flowforge_theme.dart';
 import '../widgets/ff_widgets.dart';
 
 /// Callback when canvas nodes/edges change.
 typedef CanvasChanged = void Function(List<WorkflowNode> nodes, List<WorkflowEdge> edges);
+
+/// A snapshot of canvas state for undo/redo.
+class _CanvasSnapshot {
+  final List<WorkflowNode> nodes;
+  final List<WorkflowEdge> edges;
+  _CanvasSnapshot(this.nodes, this.edges);
+
+  _CanvasSnapshot copy() => _CanvasSnapshot(
+    nodes.map((n) => WorkflowNode(
+      id: n.id, type: n.type, label: n.label,
+      config: n.config, positionX: n.positionX, positionY: n.positionY,
+    )).toList(),
+    edges.map((e) => WorkflowEdge(
+      from: e.from, fromPort: e.fromPort, to: e.to,
+    )).toList(),
+  );
+}
 
 class CanvasEditor extends StatefulWidget {
   final List<WorkflowNode> nodes;
@@ -50,188 +68,277 @@ class _CanvasEditorState extends State<CanvasEditor> {
   static const double _nodeHeight = 64.0;
   static const double _portRadius = 7.0;
 
+  // Undo/redo history
+  final List<_CanvasSnapshot> _undoStack = [];
+  final List<_CanvasSnapshot> _redoStack = [];
+  static const int _maxHistory = 50;
+
+  /// Save current state to undo stack before a mutation.
+  void _saveSnapshot() {
+    _undoStack.add(_CanvasSnapshot(widget.nodes, widget.edges).copy());
+    if (_undoStack.length > _maxHistory) _undoStack.removeAt(0);
+    _redoStack.clear(); // new action clears redo
+  }
+
+  void _undo() {
+    if (_undoStack.isEmpty) return;
+    final snapshot = _undoStack.removeLast();
+    _redoStack.add(_CanvasSnapshot(widget.nodes, widget.edges).copy());
+    _restoreSnapshot(snapshot);
+  }
+
+  void _redo() {
+    if (_redoStack.isEmpty) return;
+    final snapshot = _redoStack.removeLast();
+    _undoStack.add(_CanvasSnapshot(widget.nodes, widget.edges).copy());
+    _restoreSnapshot(snapshot);
+  }
+
+  void _restoreSnapshot(_CanvasSnapshot snapshot) {
+    widget.nodes.clear();
+    widget.nodes.addAll(snapshot.nodes);
+    widget.edges.clear();
+    widget.edges.addAll(snapshot.edges);
+    widget.onChanged?.call(widget.nodes, widget.edges);
+    setState(() {});
+  }
+
+  // Keyboard shortcuts
+  late final Map<SingleActivator, Intent> _shortcuts = {
+    const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _UndoIntent(),
+    const SingleActivator(LogicalKeyboardKey.keyY, control: true): _RedoIntent(),
+    const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _RedoIntent(),
+    const SingleActivator(LogicalKeyboardKey.delete): _DeleteIntent(),
+    const SingleActivator(LogicalKeyboardKey.backspace): _DeleteIntent(),
+  };
+
+  void _handleKey(LogicalKeyboardKey key, bool control, bool shift) {
+    if (control && key == LogicalKeyboardKey.keyZ && !shift) _undo();
+    if (control && key == LogicalKeyboardKey.keyY) _redo();
+    if (control && key == LogicalKeyboardKey.keyZ && shift) _redo();
+    if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.backspace) {
+      _deleteSelected();
+    }
+  }
+
+  void _deleteSelected() {
+    if (widget.selectedNodeId == null) return;
+    _saveSnapshot();
+    final id = widget.selectedNodeId!;
+    widget.nodes.removeWhere((n) => n.id == id);
+    widget.edges.removeWhere((e) => e.from == id || e.to == id);
+    widget.onNodeSelected?.call(null);
+    widget.onChanged?.call(widget.nodes, widget.edges);
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final ext = theme.extension<FlowForgeThemeExtension>()!;
 
-    return ClipRect(
-      child: GestureDetector(
-        onPanStart: _onCanvasPanStart,
-        onPanUpdate: _onCanvasPanUpdate,
-        onPanEnd: _onCanvasPanEnd,
-        onTapUp: (details) => widget.onNodeSelected?.call(null),
-        child: MouseRegion(
-          cursor: _draggingNodeId != null
-              ? SystemMouseCursors.grabbing
-              : _edgeFromNodeId != null
-                  ? SystemMouseCursors.precise
-                  : SystemMouseCursors.basic,
-          child: CustomPaint(
-            painter: _CanvasPainter(
-              nodes: widget.nodes,
-              edges: widget.edges,
-              panOffset: _panOffset,
-              scale: _scale,
-              selectedNodeId: widget.selectedNodeId,
-              edgeFromNodeId: _edgeFromNodeId,
-              edgeFromPort: _edgeFromPort,
-              edgeDrawEnd: _edgeDrawEnd,
-              brandColor: ext.brandColor,
-              surfaceColor: ext.surfaceColor,
-              borderColor: theme.dividerColor,
-              textColor: theme.colorScheme.onSurface,
-            ),
-            child: Stack(
-              children: [
-                // Node cards
-                ...widget.nodes.map((node) => _buildNodeCard(node, theme, ext)),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNodeCard(WorkflowNode node, ThemeData theme, FlowForgeThemeExtension ext) {
-    final screenPos = _worldToScreen(Offset(node.positionX, node.positionY));
-    final isSelected = widget.selectedNodeId == node.id;
-    final nodeColor = _nodeColor(node.type, ext);
-
-    return Positioned(
-      left: screenPos.dx,
-      top: screenPos.dy,
-      width: _nodeWidth * _scale,
-      height: _nodeHeight * _scale,
-      child: GestureDetector(
-        onTap: () => widget.onNodeSelected?.call(node.id),
-        onPanStart: (d) => _onNodeDragStart(node, d),
-        onPanUpdate: (d) => _onNodeDragUpdate(node, d),
-        onPanEnd: (_) => _onNodeDragEnd(),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isSelected
-                ? nodeColor.withValues(alpha: 0.15)
-                : ext.surfaceColor,
-            borderRadius: BorderRadius.circular(8 * _scale),
-            border: Border.all(
-              color: isSelected ? nodeColor : ext.borderColor,
-              width: isSelected ? 2 : 1,
-            ),
-            boxShadow: isSelected
-                ? [BoxShadow(color: nodeColor.withValues(alpha: 0.2), blurRadius: 8)]
-                : null,
-          ),
-          child: Stack(
-            children: [
-              // Type color bar
-              Positioned(
-                left: 0, top: 0, bottom: 0,
-                width: 4 * _scale,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: nodeColor,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(8 * _scale),
-                      bottomLeft: Radius.circular(8 * _scale),
-                    ),
+    return KeyboardListener(
+      focusNode: FocusNode()..requestFocus(),
+      onKeyEvent: (e) {
+        if (e is KeyDownEvent) {
+          _handleKey(e.logicalKey, e.physicalKeyboardKeyPressed(LogicalKeyboardKey.controlLeft) || e.physicalKeyboardKeyPressed(LogicalKeyboardKey.controlRight), e.physicalKeyboardKeyPressed(LogicalKeyboardKey.shiftLeft) || e.physicalKeyboardKeyPressed(LogicalKeyboardKey.shiftRight));
+        }
+      },
+      child: ClipRect(
+        child: Stack(
+          children: [
+            // Main canvas
+            GestureDetector(
+              onPanStart: _onCanvasPanStart,
+              onPanUpdate: _onCanvasPanUpdate,
+              child: MouseRegion(
+                cursor: _draggingNodeId != null ? SystemMouseCursors.grabbing : SystemMouseCursors.basic,
+                child: CustomPaint(
+                  painter: _CanvasPainter(
+                    nodes: widget.nodes,
+                    edges: widget.edges,
+                    panOffset: _panOffset,
+                    scale: _scale,
+                    selectedNodeId: widget.selectedNodeId,
+                    edgeFromNodeId: _edgeFromNodeId,
+                    edgeFromPort: _edgeFromPort,
+                    edgeDrawEnd: _edgeDrawEnd,
+                    brandColor: ext.brandColor,
+                    surfaceColor: ext.surfaceColor,
+                    borderColor: ext.borderColor,
+                    textColor: ext.textColor,
+                  ),
+                  size: Size.infinite,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onDoubleTap: () => _zoomTo(1.0), // double-click resets zoom
+                    child: _buildNodes(ext, theme),
                   ),
                 ),
               ),
-              // Label + type
-              Positioned(
-                left: 12 * _scale,
-                right: 8 * _scale,
-                top: 8 * _scale,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      node.label.isNotEmpty ? node.label : node.id,
-                      style: TextStyle(
-                        fontSize: 13 * _scale,
-                        fontWeight: FontWeight.w600,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    SizedBox(height: 2 * _scale),
-                    Text(
-                      _nodeDisplayName(node.type),
-                      style: TextStyle(
-                        fontSize: 11 * _scale,
-                        color: nodeColor,
-                      ),
-                    ),
-                  ],
-                ),
+            ),
+
+            // Minimap
+            Positioned(
+              right: 16,
+              bottom: 16,
+              child: _Minimap(
+                nodes: widget.nodes,
+                edges: widget.edges,
+                panOffset: _panOffset,
+                scale: _scale,
+                canvasSize: MediaQuery.of(context).size,
+                nodeWidth: _nodeWidth,
+                nodeHeight: _nodeHeight,
+                brandColor: ext.brandColor,
+                borderColor: ext.borderColor,
+                onTap: (worldPos) {
+                  setState(() {
+                    _panOffset = worldPos;
+                  });
+                },
               ),
-              // Input port (left center)
-              Positioned(
-                left: -_portRadius,
-                top: (_nodeHeight * _scale) / 2 - _portRadius,
-                child: GestureDetector(
-                  onPanStart: (d) => _onPortTap(node, 'in', isOutput: false),
-                  child: _buildPort(nodeColor, false),
-                ),
+            ),
+
+            // Zoom controls
+            Positioned(
+              right: 16,
+              top: 16,
+              child: _ZoomControls(
+                scale: _scale,
+                onZoomIn: () => _zoomTo(_scale * 1.2),
+                onZoomOut: () => _zoomTo(_scale / 1.2),
+                onReset: () => _zoomTo(1.0),
               ),
-              // Output port (right center)
-              Positioned(
-                right: -_portRadius,
-                top: (_nodeHeight * _scale) / 2 - _portRadius,
-                child: GestureDetector(
-                  onPanStart: (d) => _onPortTap(node, 'out', isOutput: true),
-                  onPanUpdate: (d) => _onEdgeDragUpdate(d),
-                  onPanEnd: (d) => _onEdgeDragEnd(d),
-                  child: _buildPort(nodeColor, true),
-                ),
+            ),
+
+            // Undo/redo indicator
+            Positioned(
+              left: 16,
+              bottom: 16,
+              child: _UndoRedoIndicator(
+                canUndo: _undoStack.isNotEmpty,
+                canRedo: _redoStack.isNotEmpty,
+                onUndo: _undo,
+                onRedo: _redo,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildPort(Color color, bool isOutput) {
-    return Container(
-      width: _portRadius * 2,
-      height: _portRadius * 2,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
-      ),
+  Widget _buildNodes(FlowForgeThemeExtension ext, ThemeData theme) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Listener(
+          onPointerSignal: (signal) {
+            if (signal is PointerScrollEvent) {
+              setState(() {
+                final zoomDelta = signal.scrollDelta.dy > 0 ? 0.9 : 1.1;
+                _scale = (_scale * zoomDelta).clamp(0.2, 3.0);
+              });
+            }
+          },
+          child: Stack(
+            children: widget.nodes.map((node) {
+              final screenPos = _worldToScreen(Offset(node.positionX, node.positionY));
+              final isSelected = widget.selectedNodeId == node.id;
+
+              return Positioned(
+                left: screenPos.dx,
+                top: screenPos.dy,
+                width: _nodeWidth * _scale,
+                height: _nodeHeight * _scale,
+                child: GestureDetector(
+                  onTap: () => widget.onNodeSelected?.call(node.id),
+                  onPanStart: (d) => _onNodeDragStart(node, d),
+                  onPanUpdate: (d) => _onNodeDragUpdate(node, d),
+                  onPanEnd: (_) => _onNodeDragEnd(node),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? ext.brandColor.withValues(alpha: 0.15)
+                          : ext.surfaceColor,
+                      borderRadius: BorderRadius.circular(8 * _scale),
+                      border: Border.all(
+                        color: isSelected ? ext.brandColor : ext.borderColor,
+                        width: isSelected ? 2 : 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        // Node label
+                        Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(8 * _scale),
+                            child: Text(
+                              node.label.isNotEmpty ? node.label : node.type,
+                              style: TextStyle(
+                                fontSize: 12 * _scale,
+                                fontWeight: FontWeight.w500,
+                                color: ext.textColor,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+
+                        // Input port
+                        Positioned(
+                          left: -_portRadius * _scale,
+                          top: (_nodeHeight * _scale) / 2 - _portRadius * _scale,
+                          child: GestureDetector(
+                            onPanStart: (d) => _onPortTap(node, 'in', isOutput: false),
+                            child: Container(
+                              width: _portRadius * 2 * _scale,
+                              height: _portRadius * 2 * _scale,
+                              decoration: BoxDecoration(
+                                color: ext.brandColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                        // Output port
+                        Positioned(
+                          right: -_portRadius * _scale,
+                          top: (_nodeHeight * _scale) / 2 - _portRadius * _scale,
+                          child: GestureDetector(
+                            onPanStart: (d) => _onPortTap(node, 'out', isOutput: true),
+                            onPanUpdate: (d) => _onEdgeDragUpdate(d),
+                            onPanEnd: (d) => _onEdgeDragEnd(d),
+                            child: Container(
+                              width: _portRadius * 2 * _scale,
+                              height: _portRadius * 2 * _scale,
+                              decoration: BoxDecoration(
+                                color: ext.brandColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
     );
   }
-
-  Color _nodeColor(String type, FlowForgeThemeExtension ext) {
-    switch (type) {
-      case 'log': return Colors.teal;
-      case 'http': return Colors.blue;
-      case 'delay': return Colors.orange;
-      case 'shell': return Colors.red;
-      case 'script': return Colors.purple;
-      case 'webhook': return Colors.green;
-      default: return ext.brandColor;
-    }
-  }
-
-  String _nodeDisplayName(String type) {
-    switch (type) {
-      case 'log': return '日志输出';
-      case 'http': return 'HTTP 请求';
-      case 'delay': return '延时等待';
-      case 'shell': return 'Shell 命令';
-      case 'script': return '脚本';
-      case 'webhook': return 'Webhook';
-      default: return type;
-    }
-  }
-
-  // --- Coordinate transforms ---
 
   Offset _worldToScreen(Offset world) {
     return Offset(
@@ -247,14 +354,42 @@ class _CanvasEditorState extends State<CanvasEditor> {
     );
   }
 
-  // --- Node dragging ---
+  void _zoomTo(double newScale) {
+    setState(() => _scale = newScale.clamp(0.2, 3.0));
+  }
 
-  void _onNodeDragStart(WorkflowNode node, DragStartDetails d) {
-    setState(() {
-      _draggingNodeId = node.id;
+  // --- Canvas panning ---
+  void _onCanvasPanStart(DragStartDetails d) {
+    // Only pan if not on a node
+    bool onNode = false;
+    for (final node in widget.nodes) {
+      final sp = _worldToScreen(Offset(node.positionX, node.positionY));
+      final rect = Rect.fromLTWH(sp.dx, sp.dy, _nodeWidth * _scale, _nodeHeight * _scale);
+      if (rect.contains(d.localPosition)) {
+        onNode = true;
+        break;
+      }
+    }
+    if (!onNode) {
       _dragStartLocal = d.localPosition;
-      _dragStartNodePos = Offset(node.positionX, node.positionY);
-    });
+      _dragStartNodePos = _panOffset;
+    }
+  }
+
+  void _onCanvasPanUpdate(DragUpdateDetails d) {
+    if (_draggingNodeId == null && _edgeFromNodeId == null) {
+      setState(() {
+        _panOffset = _dragStartNodePos + (d.localPosition - _dragStartLocal);
+      });
+    }
+  }
+
+  // --- Node dragging ---
+  void _onNodeDragStart(WorkflowNode node, DragStartDetails d) {
+    _saveSnapshot(); // save before drag
+    _draggingNodeId = node.id;
+    _dragStartLocal = d.localPosition;
+    _dragStartNodePos = Offset(node.positionX, node.positionY);
     widget.onNodeSelected?.call(node.id);
   }
 
@@ -268,32 +403,15 @@ class _CanvasEditorState extends State<CanvasEditor> {
     widget.onChanged?.call(widget.nodes, widget.edges);
   }
 
-  void _onNodeDragEnd() {
-    setState(() => _draggingNodeId = null);
+  void _onNodeDragEnd(WorkflowNode node) {
+    _draggingNodeId = null;
   }
 
-  // --- Canvas panning ---
-
-  void _onCanvasPanStart(DragStartDetails d) {
-    // Only pan if not clicking on a node
-  }
-
-  void _onCanvasPanUpdate(DragUpdateDetails d) {
-    if (_draggingNodeId == null && _edgeFromNodeId == null) {
-      setState(() => _panOffset += d.delta);
-    }
-  }
-
-  void _onCanvasPanEnd(DragEndDetails d) {}
-
-  // --- Edge drawing ---
-
+  // --- Port/edge interaction ---
   void _onPortTap(WorkflowNode node, String port, {required bool isOutput}) {
     if (isOutput) {
-      setState(() {
-        _edgeFromNodeId = node.id;
-        _edgeFromPort = port;
-      });
+      _edgeFromNodeId = node.id;
+      _edgeFromPort = port;
     }
   }
 
@@ -316,6 +434,7 @@ class _CanvasEditorState extends State<CanvasEditor> {
         // Check for duplicate
         final exists = widget.edges.any((e) => e.from == _edgeFromNodeId && e.to == node.id);
         if (!exists) {
+          _saveSnapshot(); // save before adding edge
           widget.edges.add(WorkflowEdge(
             from: _edgeFromNodeId!,
             fromPort: _edgeFromPort ?? 'out',
@@ -333,13 +452,293 @@ class _CanvasEditorState extends State<CanvasEditor> {
       _edgeDrawEnd = null;
     });
   }
+}
 
-  // --- Zoom (mouse wheel) ---
+// --- Undo/Redo intents ---
+class _UndoIntent extends Intent {}
+class _RedoIntent extends Intent {}
+class _DeleteIntent extends Intent {}
+
+/// Undo/redo indicator buttons.
+class _UndoRedoIndicator extends StatelessWidget {
+  final bool canUndo;
+  final bool canRedo;
+  final VoidCallback onUndo;
+  final VoidCallback onRedo;
+
+  const _UndoRedoIndicator({
+    required this.canUndo,
+    required this.canRedo,
+    required this.onUndo,
+    required this.onRedo,
+  });
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _btn(Icons.undo, canUndo, onUndo, 'Undo (Ctrl+Z)'),
+          Container(width: 1, height: 28, color: Theme.of(context).dividerColor),
+          _btn(Icons.redo, canRedo, onRedo, 'Redo (Ctrl+Y)'),
+        ],
+      ),
+    );
   }
+
+  Widget _btn(IconData icon, bool enabled, VoidCallback onTap, String tooltip) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, size: 18, color: enabled ? null : Colors.grey),
+        ),
+      ),
+    );
+  }
+}
+
+/// Zoom controls overlay.
+class _ZoomControls extends StatelessWidget {
+  final double scale;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onReset;
+
+  const _ZoomControls({
+    required this.scale,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Theme.of(context).dividerColor),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _btn(Icons.zoom_in, onZoomIn, 'Zoom In'),
+          Container(width: 36, height: 1, color: Theme.of(context).dividerColor),
+          InkWell(
+            onTap: onReset,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+              child: Text(
+                '${(scale * 100).toInt()}%',
+                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ),
+          Container(width: 36, height: 1, color: Theme.of(context).dividerColor),
+          _btn(Icons.zoom_out, onZoomOut, 'Zoom Out'),
+        ],
+      ),
+    );
+  }
+
+  Widget _btn(IconData icon, VoidCallback onTap, String tooltip) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Icon(icon, size: 18),
+        ),
+      ),
+    );
+  }
+}
+
+/// Minimap — overview of all nodes in the workflow.
+class _Minimap extends StatelessWidget {
+  final List<WorkflowNode> nodes;
+  final List<WorkflowEdge> edges;
+  final Offset panOffset;
+  final double scale;
+  final Size canvasSize;
+  final double nodeWidth;
+  final double nodeHeight;
+  final Color brandColor;
+  final Color borderColor;
+  final ValueChanged<Offset>? onTap;
+
+  static const double _minimapWidth = 160;
+  static const double _minimapHeight = 100;
+
+  const _Minimap({
+    required this.nodes,
+    required this.edges,
+    required this.panOffset,
+    required this.scale,
+    required this.canvasSize,
+    required this.nodeWidth,
+    required this.nodeHeight,
+    required this.brandColor,
+    required this.borderColor,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (d) {
+        // Convert minimap tap to world position
+        if (nodes.isEmpty) return;
+        final bounds = _getWorldBounds();
+        final relX = d.localPosition.dx / _minimapWidth;
+        final relY = d.localPosition.dy / _minimapHeight;
+        final worldX = bounds.left + relX * bounds.width;
+        final worldY = bounds.top + relY * bounds.height;
+        // Center the view on the tapped position
+        onTap?.call(Offset(
+          -worldX * scale + canvasSize.width / 2,
+          -worldY * scale + canvasSize.height / 2,
+        ));
+      },
+      child: Container(
+        width: _minimapWidth,
+        height: _minimapHeight,
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: borderColor),
+        ),
+        child: CustomPaint(
+          painter: _MinimapPainter(
+            nodes: nodes,
+            edges: edges,
+            panOffset: panOffset,
+            scale: scale,
+            canvasSize: canvasSize,
+            nodeWidth: nodeWidth,
+            nodeHeight: nodeHeight,
+            brandColor: brandColor,
+            borderColor: borderColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Rect _getWorldBounds() {
+    if (nodes.isEmpty) return Rect.zero;
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = -double.infinity, maxY = -double.infinity;
+    for (final n in nodes) {
+      minX = math.min(minX, n.positionX);
+      minY = math.min(minY, n.positionY);
+      maxX = math.max(maxX, n.positionX + nodeWidth);
+      maxY = math.max(maxY, n.positionY + nodeHeight);
+    }
+    final padding = 100.0;
+    return Rect.fromLTRB(minX - padding, minY - padding, maxX + padding, maxY + padding);
+  }
+}
+
+class _MinimapPainter extends CustomPainter {
+  final List<WorkflowNode> nodes;
+  final List<WorkflowEdge> edges;
+  final Offset panOffset;
+  final double scale;
+  final Size canvasSize;
+  final double nodeWidth;
+  final double nodeHeight;
+  final Color brandColor;
+  final Color borderColor;
+
+  _MinimapPainter({
+    required this.nodes,
+    required this.edges,
+    required this.panOffset,
+    required this.scale,
+    required this.canvasSize,
+    required this.nodeWidth,
+    required this.nodeHeight,
+    required this.brandColor,
+    required this.borderColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (nodes.isEmpty) return;
+
+    // Calculate world bounds
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = -double.infinity, maxY = -double.infinity;
+    for (final n in nodes) {
+      minX = math.min(minX, n.positionX);
+      minY = math.min(minY, n.positionY);
+      maxX = math.max(maxX, n.positionX + nodeWidth);
+      maxY = math.max(maxY, n.positionY + nodeHeight);
+    }
+    final padding = 100.0;
+    minX -= padding; minY -= padding;
+    maxX += padding; maxY += padding;
+    final worldW = maxX - minX;
+    final worldH = maxY - minY;
+
+    final sx = size.width / worldW;
+    final sy = size.height / worldH;
+    final s = math.min(sx, sy);
+
+    // Draw edges
+    final edgePaint = Paint()
+      ..color = brandColor.withValues(alpha: 0.4)
+      ..strokeWidth = 1
+      ..style = PaintingStyle.stroke;
+    for (final edge in edges) {
+      final from = nodes.where((n) => n.id == edge.from).firstOrNull;
+      final to = nodes.where((n) => n.id == edge.to).firstOrNull;
+      if (from == null || to == null) continue;
+      canvas.drawLine(
+        Offset((from.positionX + nodeWidth - minX) * s, (from.positionY + nodeHeight / 2 - minY) * s),
+        Offset((to.positionX - minX) * s, (to.positionY + nodeHeight / 2 - minY) * s),
+        edgePaint,
+      );
+    }
+
+    // Draw nodes
+    final nodePaint = Paint()..color = brandColor.withValues(alpha: 0.6);
+    for (final n in nodes) {
+      final rect = Rect.fromLTWH(
+        (n.positionX - minX) * s,
+        (n.positionY - minY) * s,
+        nodeWidth * s,
+        nodeHeight * s,
+      );
+      canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(2)), nodePaint);
+    }
+
+    // Draw viewport rectangle
+    final vpLeft = (-panOffset.dx / scale - minX) * s;
+    final vpTop = (-panOffset.dy / scale - minY) * s;
+    final vpW = (canvasSize.width / scale) * s;
+    final vpH = (canvasSize.height / scale) * s;
+    final vpPaint = Paint()
+      ..color = brandColor.withValues(alpha: 0.3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawRect(Rect.fromLTWH(vpLeft, vpTop, vpW, vpH), vpPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 /// Paints edges and grid.
