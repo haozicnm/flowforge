@@ -76,6 +76,10 @@ const SITE_COLORS = {
 const SESSION_COLORS = ['blue', 'red', 'yellow', 'green', 'cyan', 'orange', 'pink', 'purple'];
 let sessionColorIdx = 0;
 
+// 操作追踪
+let _traceEnabled = false;
+let _traceLog = [];
+
 // @e ref 系统
 const refMap = new Map();
 let refCounter = 1;
@@ -106,7 +110,7 @@ function connectWebSocket() {
       ws.send(JSON.stringify({
         type: 'register',
         client: 'webbridge',
-        version: '1.4.0',
+        version: '1.5.0',
         capabilities: Object.keys(tools),
       }));
     };
@@ -156,8 +160,17 @@ async function handleCommand(msg) {
     }
 
     const result = await tools[action](params);
+    // Trace logging
+    if (_traceEnabled) {
+      _traceLog.push({ timestamp: Date.now(), action, params: JSON.stringify(params).slice(0, 200), success: true });
+      if (_traceLog.length > 500) _traceLog.shift();
+    }
     ws?.send(JSON.stringify({ id, success: true, data: result }));
   } catch (e) {
+    if (_traceEnabled) {
+      _traceLog.push({ timestamp: Date.now(), action, params: JSON.stringify(params).slice(0, 200), success: false, error: e.message });
+      if (_traceLog.length > 500) _traceLog.shift();
+    }
     ws?.send(JSON.stringify({ id, success: false, error: e.message }));
   }
 }
@@ -1092,6 +1105,299 @@ const tools = {
     await cdpCommand('Page.enable');
     return { success: true, action, message: `Dialog handler set to "${action}"` };
   },
+
+  // ─── Phase 4: Kimi 对齐 — observe→act→verify ───
+
+  /**
+   * press_key — 单键按下（对齐 Kimi）
+   * params: { key: "Enter" | "Tab" | "Escape" | "Backspace" | ... }
+   */
+  async press_key(params) {
+    const { key } = params;
+    if (!key) throw new Error('press_key: key is required');
+    return await tools.send_keys({ key, modifiers: params.modifiers });
+  },
+
+  /**
+   * key_combo — 组合键（对齐 Kimi）
+   * params: { keys: ["Control", "s"] } 或 { keys: ["ctrl", "shift", "p"] }
+   */
+  async key_combo(params) {
+    const { keys } = params;
+    if (!keys || !Array.isArray(keys) || keys.length < 2) {
+      throw new Error('key_combo: keys array with ≥2 entries required, e.g. ["Control", "s"]');
+    }
+    const modifiers = [];
+    let mainKey = null;
+    const MOD_ALIASES = { ctrl: 'Control', control: 'Control', shift: 'Shift', alt: 'Alt', meta: 'Meta', cmd: 'Meta', win: 'Meta' };
+    for (const k of keys) {
+      const norm = k.charAt(0).toUpperCase() + k.slice(1).toLowerCase();
+      const resolved = MOD_ALIASES[norm.toLowerCase()] || norm;
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(resolved)) {
+        modifiers.push(resolved);
+      } else {
+        mainKey = k; // preserve original case for the main key
+      }
+    }
+    if (!mainKey) throw new Error('key_combo: no main key found (all are modifiers)');
+    return await tools.send_keys({ key: mainKey, modifiers });
+  },
+
+  /**
+   * submit_form — 智能表单提交（对齐 Kimi，5 策略 fallback）
+   * params: { selector? } — 可选，指定 form 或其内部元素
+   * 策略顺序：requestSubmit → 找 submit 按钮 → Enter → Ctrl+Enter → form.submit()
+   */
+  async submit_form(params) {
+    const { selector } = params || {};
+    await ensureAttached((await resolveTab()).id);
+
+    const result = await cdpCommand('Runtime.evaluate', {
+      expression: `(() => {
+        function submitForm(el) {
+          const form = el?.closest('form') || (el?.tagName === 'FORM' ? el : null);
+          if (!form) return { error: 'no form found' };
+          // Strategy 1: requestSubmit (fires submit event, respects validation)
+          if (typeof form.requestSubmit === 'function') {
+            try { form.requestSubmit(); return { success: true, strategy: 'requestSubmit' }; } catch {}
+          }
+          // Strategy 2: find submit button
+          const btn = form.querySelector('button[type="submit"], input[type="submit"], button:not([type])');
+          if (btn) { btn.click(); return { success: true, strategy: 'submitButton' }; }
+          // Strategy 3: form.submit() (bypasses validation)
+          form.submit();
+          return { success: true, strategy: 'formSubmit' };
+        }
+        const el = ${selector ? `document.querySelector(${JSON.stringify(selector)})` : 'document.activeElement'};
+        return submitForm(el);
+      })()`,
+      returnByValue: true,
+    });
+    if (result.exceptionDetails) throw new Error(`submit_form: ${result.exceptionDetails.text}`);
+    const val = result.result.value;
+    if (val?.error) throw new Error(`submit_form: ${val.error}`);
+    return val;
+  },
+
+  /**
+   * verify — 操作后验证（对齐 Kimi observe→act→verify）
+   * params: { conditions: [{ type, ... }] }
+   * condition types: url_changed, url_contains, text_visible, text_invisible, element_visible, element_invisible, element_count
+   */
+  async verify(params) {
+    const { conditions } = params;
+    if (!conditions || !Array.isArray(conditions)) throw new Error('verify: conditions array required');
+    await ensureAttached((await resolveTab()).id);
+
+    const results = [];
+    for (const cond of conditions) {
+      try {
+        let expression;
+        switch (cond.type) {
+          case 'url_changed':
+            expression = `location.href !== ${JSON.stringify(cond.from || '')}`;
+            break;
+          case 'url_contains':
+            expression = `location.href.includes(${JSON.stringify(cond.value)})`;
+            break;
+          case 'text_visible':
+            expression = `document.body?.innerText?.includes(${JSON.stringify(cond.value)}) || false`;
+            break;
+          case 'text_invisible':
+            expression = `!(document.body?.innerText?.includes(${JSON.stringify(cond.value)}))`;
+            break;
+          case 'element_visible':
+            expression = `(() => { const el = document.querySelector(${JSON.stringify(cond.selector)}); return el ? el.offsetParent !== null || el.getBoundingClientRect().height > 0 : false; })()`;
+            break;
+          case 'element_invisible':
+            expression = `(() => { const el = document.querySelector(${JSON.stringify(cond.selector)}); return !el || el.offsetParent === null; })()`;
+            break;
+          case 'element_count':
+            expression = `document.querySelectorAll(${JSON.stringify(cond.selector)}).length ${cond.operator || '>='} ${cond.count || 1}`;
+            break;
+          default:
+            results.push({ type: cond.type, passed: false, error: 'unknown condition type' });
+            continue;
+        }
+        const r = await cdpCommand('Runtime.evaluate', { expression, returnByValue: true });
+        results.push({ type: cond.type, passed: !!r.result?.value });
+      } catch (e) {
+        results.push({ type: cond.type, passed: false, error: e.message });
+      }
+    }
+    const allPassed = results.every(r => r.passed);
+    return { passed: allPassed, conditions: results };
+  },
+
+  /**
+   * wait_for_stable — 等待 DOM 稳定（对齐 Kimi MutationObserver）
+   * params: { timeout?, stableMs? }
+   * 当 DOM 在 stableMs 内无变化时返回
+   */
+  async wait_for_stable(params) {
+    const { timeout = 10000, stableMs = 1500 } = params || {};
+    await ensureAttached((await resolveTab()).id);
+
+    // 注入 MutationObserver，等 DOM 停止变化
+    const result = await cdpCommand('Runtime.evaluate', {
+      expression: `new Promise((resolve, reject) => {
+        let timer = null;
+        const timeoutTimer = setTimeout(() => { observer.disconnect(); reject(new Error('timeout')); }, ${timeout});
+        const observer = new MutationObserver(() => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            observer.disconnect();
+            clearTimeout(timeoutTimer);
+            resolve({ success: true, stableMs: ${stableMs} });
+          }, ${stableMs});
+        });
+        observer.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+        // Start initial timer in case there are no mutations at all
+        timer = setTimeout(() => {
+          observer.disconnect();
+          clearTimeout(timeoutTimer);
+          resolve({ success: true, stableMs: ${stableMs}, noMutations: true });
+        }, ${stableMs});
+      })`,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (result.exceptionDetails) throw new Error(`wait_for_stable: ${result.exceptionDetails.exception?.description || result.exceptionDetails.text}`);
+    return result.result.value;
+  },
+
+  /**
+   * is_actionable — 检查元素是否可操作（对齐 Kimi 7 项检查）
+   * params: { selector }
+   * 返回每项检查结果
+   */
+  async is_actionable(params) {
+    const { selector } = params;
+    if (!selector) throw new Error('is_actionable: selector is required');
+    await ensureAttached((await resolveTab()).id);
+
+    const result = await cdpCommand('Runtime.evaluate', {
+      expression: `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return { actionable: false, error: 'element not found' };
+        const rect = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return {
+          actionable: rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0',
+          checks: {
+            exists: true,
+            visible: style.display !== 'none' && style.visibility !== 'hidden',
+            hasSize: rect.width > 0 && rect.height > 0,
+            inViewport: rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0,
+            notDisabled: !el.disabled,
+            notPointerEventsNone: style.pointerEvents !== 'none',
+            opacity: parseFloat(style.opacity) > 0,
+          },
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+          tag: el.tagName,
+          text: (el.textContent || '').slice(0, 80),
+        };
+      })()`,
+      returnByValue: true,
+    });
+    if (result.exceptionDetails) throw new Error(`is_actionable: ${result.exceptionDetails.text}`);
+    return result.result.value;
+  },
+
+  /**
+   * highlight — 高亮标记元素（调试用，对齐 Kimi）
+   * params: { selector, duration?, color? }
+   */
+  async highlight(params) {
+    const { selector, duration = 2000, color = '#00B4D8' } = params;
+    if (!selector) throw new Error('highlight: selector is required');
+    await ensureAttached((await resolveTab()).id);
+
+    const result = await cdpCommand('Runtime.evaluate', {
+      expression: `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return { error: 'element not found' };
+        const rect = el.getBoundingClientRect();
+        const overlay = document.createElement('div');
+        overlay.style.cssText = \`position:fixed;left:\${rect.left}px;top:\${rect.top}px;width:\${rect.width}px;height:\${rect.height}px;border:3px solid ${color};background:${color}22;z-index:2147483647;pointer-events:none;transition:opacity 0.3s;\`;
+        document.body.appendChild(overlay);
+        setTimeout(() => { overlay.style.opacity = '0'; setTimeout(() => overlay.remove(), 300); }, ${duration});
+        return { success: true, selector: ${JSON.stringify(selector)}, rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) } };
+      })()`,
+      returnByValue: true,
+    });
+    if (result.exceptionDetails) throw new Error(`highlight: ${result.exceptionDetails.text}`);
+    const val = result.result.value;
+    if (val?.error) throw new Error(`highlight: ${val.error}`);
+    return val;
+  },
+
+  /**
+   * query_elements — 查询页面元素（对齐 Kimi）
+   * params: { selector?, role?, text?, limit? }
+   * 返回匹配元素列表（tag, text, rect, attributes）
+   */
+  async query_elements(params) {
+    const { selector, role, text, limit = 20 } = params;
+    if (!selector && !role && !text) throw new Error('query_elements: need selector, role, or text');
+    await ensureAttached((await resolveTab()).id);
+
+    let expression;
+    if (selector) {
+      expression = `(() => {
+        const els = [...document.querySelectorAll(${JSON.stringify(selector)})].slice(0, ${limit});
+        return els.map(el => {
+          const r = el.getBoundingClientRect();
+          return { tag: el.tagName, text: (el.textContent||'').trim().slice(0,120), rect: {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)}, id: el.id || undefined, className: el.className?.toString()?.slice(0,80) || undefined };
+        });
+      })()`;
+    } else if (role) {
+      expression = `(() => {
+        const els = [...document.querySelectorAll('[role=${JSON.stringify(role)}]')].slice(0, ${limit});
+        return els.map(el => {
+          const r = el.getBoundingClientRect();
+          return { tag: el.tagName, role: el.getAttribute('role'), text: (el.textContent||'').trim().slice(0,120), rect: {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)} };
+        });
+      })()`;
+    } else {
+      expression = `(() => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const results = [];
+        while (walker.nextNode() && results.length < ${limit}) {
+          const node = walker.currentNode;
+          if (node.textContent?.includes(${JSON.stringify(text)})) {
+            const el = node.parentElement;
+            if (el) {
+              const r = el.getBoundingClientRect();
+              results.push({ tag: el.tagName, text: (el.textContent||'').trim().slice(0,120), rect: {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)} });
+            }
+          }
+        }
+        return results;
+      })()`;
+    }
+    const result = await cdpCommand('Runtime.evaluate', { expression, returnByValue: true });
+    if (result.exceptionDetails) throw new Error(`query_elements: ${result.exceptionDetails.text}`);
+    return { count: result.result.value?.length || 0, elements: result.result.value || [] };
+  },
+
+  /**
+   * trace — 操作追踪（记录操作历史，对齐 Kimi）
+   * params: { action: "start" | "stop" | "get" }
+   */
+  async trace(params) {
+    const cmd = params?.action || 'get';
+    if (cmd === 'start') {
+      _traceEnabled = true;
+      _traceLog = [];
+      return { success: true, message: 'trace started' };
+    }
+    if (cmd === 'stop') {
+      _traceEnabled = false;
+      return { success: true, trace: _traceLog };
+    }
+    return { trace: _traceLog, enabled: _traceEnabled };
+  },
 };
 
 // ═══════════════════════════════════════════════
@@ -1475,7 +1781,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             const result = {
                 connected: wsConnected,
                 port: WS_PORT,
-                version: '1.4.0',
+                version: '1.5.0',
                 activeTabId,
                 attachedTabs: [...attachedTabs],
                 sessions: [...sessionGroups.keys()],

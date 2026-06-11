@@ -38,6 +38,15 @@ Chrome 扩展 (background.js)
 | scroll | 滚动页面 |
 | hover | 悬停 |
 | send_keys | 键盘输入 |
+| press_key | 单键按下 (Enter/Tab/Escape) |
+| key_combo | 组合键 (Ctrl+S, Ctrl+Shift+P) |
+| submit_form | 智能表单提交 (5 策略 fallback) |
+| verify | 操作后验证 (URL/文本/元素状态) |
+| wait_for_stable | 等待 DOM 稳定 (MutationObserver) |
+| is_actionable | 元素可操作性检查 (7 项) |
+| highlight | 高亮标记元素 (调试用) |
+| query_elements | 按 selector/role/text 查询元素 |
+| trace | 操作追踪记录 |
 | ... | 更多 |
 
 ## 配置
