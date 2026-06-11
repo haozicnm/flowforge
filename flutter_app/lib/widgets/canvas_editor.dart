@@ -41,6 +41,8 @@ class CanvasEditor extends StatefulWidget {
   final Set<String> failedNodes;
   /// Map of node ID → execution duration in ms.
   final Map<String, int> nodeDurations;
+  /// Map of node ID → output data (for hover tooltip).
+  final Map<String, Map<String, dynamic>> nodeOutputs;
 
   const CanvasEditor({
     super.key,
@@ -54,6 +56,7 @@ class CanvasEditor extends StatefulWidget {
     this.onBreakpointToggle,
     this.failedNodes = const {},
     this.nodeDurations = const {},
+    this.nodeOutputs = const {},
   });
 
   @override
@@ -74,6 +77,10 @@ class _CanvasEditorState extends State<CanvasEditor> {
   String? _edgeFromNodeId;
   String? _edgeFromPort;
   Offset? _edgeDrawEnd;
+
+  // Hover state
+  String? _hoveredNodeId;
+  Offset _hoverPosition = Offset.zero;
 
   // Node size
   static const double _nodeWidth = 180.0;
@@ -235,6 +242,17 @@ class _CanvasEditorState extends State<CanvasEditor> {
                 onRedo: _redo,
               ),
             ),
+
+            // Hover output tooltip
+            if (_hoveredNodeId != null && widget.nodeOutputs.containsKey(_hoveredNodeId))
+              Positioned(
+                left: _hoverPosition.dx + _nodeWidth * _scale + 8,
+                top: _hoverPosition.dy,
+                child: _OutputTooltip(
+                  nodeId: _hoveredNodeId!,
+                  outputs: widget.nodeOutputs[_hoveredNodeId]!,
+                ),
+              ),
           ],
         ),
       ),
@@ -265,10 +283,16 @@ class _CanvasEditorState extends State<CanvasEditor> {
                 top: screenPos.dy,
                 width: _nodeWidth * _scale,
                 height: _nodeHeight * _scale,
-                child: GestureDetector(
-                  onTap: () => widget.onNodeSelected?.call(node.id),
-                  onDoubleTap: () => widget.onBreakpointToggle?.call(node.id),
-                  onPanStart: (d) => _onNodeDragStart(node, d),
+                child: MouseRegion(
+                  onEnter: (_) => setState(() {
+                    _hoveredNodeId = node.id;
+                    _hoverPosition = screenPos;
+                  }),
+                  onExit: (_) => setState(() => _hoveredNodeId = null),
+                  child: GestureDetector(
+                    onTap: () => widget.onNodeSelected?.call(node.id),
+                    onDoubleTap: () => widget.onBreakpointToggle?.call(node.id),
+                    onPanStart: (d) => _onNodeDragStart(node, d),
                   onPanUpdate: (d) => _onNodeDragUpdate(node, d),
                   onPanEnd: (_) => _onNodeDragEnd(node),
                   child: Container(
@@ -793,6 +817,85 @@ class _MinimapPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+/// Output tooltip — shows when hovering over a node with execution outputs.
+class _OutputTooltip extends StatelessWidget {
+  final String nodeId;
+  final Map<String, dynamic> outputs;
+
+  const _OutputTooltip({required this.nodeId, required this.outputs});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Material(
+      elevation: 8,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: 250,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E1E2E) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: isDark ? Colors.white24 : Colors.grey.shade300),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Text(
+              '📤 $nodeId 输出',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white70 : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Output entries
+            ...outputs.entries.map((e) {
+              final valueStr = e.value is String
+                  ? e.value as String
+                  : const JsonEncoder.withIndent('  ').convert(e.value);
+              final displayValue = valueStr.length > 100
+                  ? '${valueStr.substring(0, 100)}...'
+                  : valueStr;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '  ${e.key}:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: isDark ? Colors.white54 : Colors.black54,
+                      ),
+                    ),
+                    Text(
+                      '  $displayValue',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontFamily: 'monospace',
+                        color: isDark ? Colors.white70 : Colors.black87,
+                      ),
+                      maxLines: 5,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Paints edges and grid.
