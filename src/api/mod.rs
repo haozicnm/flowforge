@@ -85,14 +85,14 @@ pub async fn register(
     let user = state.auth_db.create_user(&req.username, &req.password).map_err(|e| {
         (
             StatusCode::CONFLICT,
-            Json(serde_json::json!({"error": e})),
+            Json(serde_json::json!({"error": e.to_string()})),
         )
     })?;
 
     let token = crate::auth::create_jwt(&user).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e})),
+            Json(serde_json::json!({"error": e.to_string()})),
         )
     })?;
 
@@ -119,14 +119,14 @@ pub async fn login(
     let user = state.auth_db.verify_password(&req.username, &req.password).map_err(|e| {
         (
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({"error": e})),
+            Json(serde_json::json!({"error": e.to_string()})),
         )
     })?;
 
     let token = crate::auth::create_jwt(&user).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": e})),
+            Json(serde_json::json!({"error": e.to_string()})),
         )
     })?;
 
@@ -501,7 +501,7 @@ pub async fn create_schedule(
 
     match state.scheduler.create_schedule(name.to_string(), workflow_id, cron_expr) {
         Ok(schedule) => Ok(Json(serde_json::json!(schedule))),
-        Err(e) => Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+        Err(e) => { let msg = e.to_string(); Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg})))) },
     }
 }
 
@@ -524,7 +524,7 @@ pub async fn update_schedule(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     match state.scheduler.update_schedule(&id, body) {
         Ok(schedule) => Ok(Json(serde_json::json!(schedule))),
-        Err(e) => Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+        Err(e) => { let msg = e.to_string(); Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": msg})))) },
     }
 }
 
@@ -568,5 +568,100 @@ fn event_to_json(event: crate::engine::executor::ExecutionEvent) -> serde_json::
         ExecutionEvent::_WorkflowFailed { _error } => serde_json::json!({
             "type": "workflow_failed", "error": _error
         }),
+    }
+}
+
+// ============================================================
+// API Gateway
+// ============================================================
+
+/// GET /api/gateway — list published APIs.
+pub async fn gateway_list(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let apis = state.api_gateway.list();
+    Json(serde_json::json!({
+        "apis": apis,
+        "total": apis.len()
+    }))
+}
+
+/// POST /api/gateway/publish — publish a workflow as API.
+pub async fn gateway_publish(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let workflow_id = match body.get("workflow_id").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "workflow_id required"})))),
+    };
+    let path = match body.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p.to_string(),
+        None => return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "path required"})))),
+    };
+    let api_key = body.get("api_key").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let rate_limit = body.get("rate_limit").and_then(|v| v.as_u64()).unwrap_or(0);
+
+    match state.api_gateway.publish(workflow_id, path, api_key, rate_limit) {
+        Ok(api) => Ok(Json(serde_json::json!(api))),
+        Err(e) => {
+            let err = serde_json::Value::String(e.to_string());
+            let body = serde_json::json!({  "error": err });
+            Err((StatusCode::BAD_REQUEST, Json(body)))
+        },
+    }
+}
+
+/// DELETE /api/gateway/unpublish/:path — unpublish an API.
+pub async fn gateway_unpublish(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match state.api_gateway.unpublish(&path) {
+        Ok(()) => Ok(Json(serde_json::json!({"unpublished": true}))),
+        Err(e) => {
+            let err = serde_json::Value::String(e);
+            let body = serde_json::json!({  "error": err });
+            Err((StatusCode::NOT_FOUND, Json(body)))
+        },
+    }
+}
+
+/// ANY /api/run/:path — dynamic API gateway endpoint.
+pub async fn gateway_run(
+    State(state): State<AppState>,
+    Path(path): Path<String>,
+    method: axum::http::Method,
+    headers: axum::http::HeaderMap,
+    uri: axum::http::Uri,
+    body: String,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    // Parse body as JSON (fallback to empty object)
+    let body_json: serde_json::Value = serde_json::from_str(&body)
+        .unwrap_or_else(|_| serde_json::json!({}));
+
+    // Extract query params
+    let query_params: HashMap<String, String> = uri.query()
+        .map(|q| url::form_urlencoded::parse(q.as_bytes())
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect())
+        .unwrap_or_default();
+
+    // Extract API key from header
+    let api_key = headers.get("X-API-Key")
+        .and_then(|v| v.to_str().ok());
+
+    let result = state.api_gateway.handle_request(
+        &path,
+        method.as_str(),
+        api_key,
+        body_json,
+        query_params,
+    ).await;
+
+    match result {
+        Ok(val) => Ok(Json(val)),
+        Err((code, msg)) => {
+            let status = StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            Err((status, Json(serde_json::json!({"error": msg}))))
+        }
     }
 }

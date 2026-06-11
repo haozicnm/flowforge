@@ -1013,6 +1013,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "umya-spreadsheet",
+ "url",
  "uuid",
  "zip 2.4.2",
 ]

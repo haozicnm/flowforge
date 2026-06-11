@@ -4,6 +4,7 @@
 //! The server runs on localhost, Flutter connects via HTTP/WebSocket.
 
 mod api;
+mod api_gateway;
 #[allow(dead_code)]
 mod auth;
 mod engine;
@@ -93,6 +94,15 @@ async fn main() {
         .route("/api/schedules/:id", put(api::update_schedule))
         .route("/api/schedules/:id", delete(api::delete_schedule))
         .route("/api/schedules/:id/trigger", post(api::trigger_schedule))
+
+        // API Gateway routes
+        .route("/api/gateway", get(api::gateway_list))
+        .route("/api/gateway/publish", post(api::gateway_publish))
+        .route("/api/gateway/unpublish/:path", delete(api::gateway_unpublish))
+        .route("/api/run/:path", get(api::gateway_run))
+        .route("/api/run/:path", post(api::gateway_run))
+        .route("/api/run/:path", put(api::gateway_run))
+        .route("/api/run/:path", delete(api::gateway_run))
         .layer(CorsLayer::permissive())
         .with_state(state)
         .fallback_service(tower_http::services::ServeDir::new(&static_dir));

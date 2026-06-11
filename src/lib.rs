@@ -3,6 +3,7 @@
 //! All modules are public so integration tests in `tests/` can access them.
 
 pub mod api;
+pub mod api_gateway;
 pub mod auth;
 pub mod engine;
 pub mod error;

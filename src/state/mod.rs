@@ -30,6 +30,9 @@ pub struct AppState {
     /// 调度器 — Cron 定时执行
     pub scheduler: Arc<Scheduler>,
 
+    /// API 网关 — 工作流暴露为 API
+    pub api_gateway: Arc<crate::api_gateway::ApiGateway>,
+
     /// Authentication database.
     pub auth_db: AuthState,
 
@@ -85,12 +88,21 @@ impl AppState {
             &config.data_dir,
         ));
 
+        let api_gateway = Arc::new(crate::api_gateway::ApiGateway::new(
+            storage.clone(),
+            node_registry.clone(),
+            webbridge.clone(),
+            webhook_store.clone(),
+            &config.data_dir,
+        ));
+
         Self {
             node_registry,
             storage,
             webbridge,
             webhook_store,
             scheduler,
+            api_gateway,
             auth_db,
             _config: config,
         }

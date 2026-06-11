@@ -128,7 +128,7 @@
 - [ ] 数据库节点：MySQL/PostgreSQL/MongoDB
 - [ ] 缓存节点：Redis 读写
 - [ ] 文件存储：本地/S3/MinIO
-- [ ] 数据转换：JSON ↔ CSV ↔ XML
+- [x] 数据转换：JSON ↔ CSV ↔ XML
 
 ### 4.4 API 网关
 - [ ] API 定义：工作流暴露为 API
