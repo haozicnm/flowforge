@@ -65,10 +65,10 @@
 - [x] 节点并行：无依赖节点自动并行执行
 
 ### 2.3 变量系统增强
-- [ ] 全局变量：工作流级变量
+- [x] 全局变量：工作流级变量
 - [ ] 环境变量注入：`${env.API_KEY}`
 - [ ] 表达式引擎：条件节点支持复杂表达式
-- [ ] 变量类型：string/number/boolean/array/object
+- [x] 变量类型：string/number/boolean/array/object
 
 ### 2.4 插件系统
 - [ ] 插件目录：`~/.flowforge/plugins/`

@@ -35,11 +35,31 @@ impl NodeExecutor for ConditionNode {
                         "enum": ["equals", "not_equals", "contains", "gt", "lt", "gte", "lte", "is_empty", "is_not_empty", "regex_match", "starts_with", "ends_with"],
                         "default": "equals"
                     },
-                    "compare_value": { "type": "string" }
+                    "compare_value": { "type": "string" },
+                    "expression": { "type": "string", "description": "Complex expression (e.g. 'value > 10 AND value < 100')" }
                 },
                 "required": ["operator"]
             }),
         }
+    }
+
+    fn validate_config(
+        &self,
+        config: &serde_json::Value,
+    ) -> Result<(), Vec<crate::nodes::traits::ValidationError>> {
+        let mut errors = Vec::new();
+
+        // If expression is set, validate it can be parsed
+        if let Some(expr) = config.get("expression").and_then(|v| v.as_str()) {
+            if expr.trim().is_empty() {
+                errors.push(crate::nodes::traits::ValidationError {
+                    field: "expression".to_string(),
+                    message: "expression cannot be empty".to_string(),
+                });
+            }
+        }
+
+        if errors.is_empty() { Ok(()) } else { Err(errors) }
     }
 
     async fn execute(
@@ -50,6 +70,23 @@ impl NodeExecutor for ConditionNode {
         inputs: HashMap<String, serde_json::Value>,
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
         let value = inputs.get("value").cloned().unwrap_or(serde_json::Value::Null);
+
+        // If expression is provided, use the expression engine
+        if let Some(expr) = config.get("expression").and_then(|v| v.as_str()) {
+            let result = eval_expression(expr, &value, &inputs)?;
+            tracing::info!("Condition expression '{}' = {}", expr, result);
+
+            let mut outputs = HashMap::new();
+            outputs.insert("result".to_string(), serde_json::json!(result));
+            if result {
+                outputs.insert("true".to_string(), value);
+            } else {
+                outputs.insert("false".to_string(), value);
+            }
+            return Ok(outputs);
+        }
+
+        // Otherwise use the operator/compare_value approach
         let operator = config["operator"].as_str().unwrap_or("equals");
         let compare = &config["compare_value"];
 
@@ -126,6 +163,278 @@ impl NodeExecutor for ConditionNode {
             outputs.insert("false".to_string(), value);
         }
         Ok(outputs)
+    }
+}
+
+/// Simple expression evaluator for condition node.
+/// Supports: comparisons (>, <, >=, <=, ==, !=), logical (AND, OR, NOT), parentheses.
+pub fn eval_expression(
+    expr: &str,
+    value: &serde_json::Value,
+    inputs: &HashMap<String, serde_json::Value>,
+) -> FlowResult<bool> {
+    let mut parser = ExprParser::new(expr, value, inputs);
+    parser.parse_or()
+}
+
+struct ExprParser<'a> {
+    tokens: Vec<String>,
+    pos: usize,
+    value: &'a serde_json::Value,
+    inputs: &'a HashMap<String, serde_json::Value>,
+}
+
+impl<'a> ExprParser<'a> {
+    fn new(expr: &str, value: &'a serde_json::Value, inputs: &'a HashMap<String, serde_json::Value>) -> Self {
+        Self {
+            tokens: tokenize(expr),
+            pos: 0,
+            value,
+            inputs,
+        }
+    }
+
+    fn peek(&self) -> Option<&str> {
+        self.tokens.get(self.pos).map(|s| s.as_str())
+    }
+
+    fn advance(&mut self) -> Option<String> {
+        if self.pos < self.tokens.len() {
+            let tok = self.tokens[self.pos].clone();
+            self.pos += 1;
+            Some(tok)
+        } else {
+            None
+        }
+    }
+
+    fn expect(&mut self, expected: &str) -> FlowResult<()> {
+        match self.advance() {
+            Some(tok) if tok == expected => Ok(()),
+            Some(tok) => Err(FlowError::ExecutionError(format!(
+                "expected '{}', got '{}'", expected, tok
+            ))),
+            None => Err(FlowError::ExecutionError(format!(
+                "expected '{}', got end of expression", expected
+            ))),
+        }
+    }
+
+    // or_expr = and_expr ("OR" and_expr)*
+    fn parse_or(&mut self) -> FlowResult<bool> {
+        let mut left = self.parse_and()?;
+        while self.peek() == Some("OR") {
+            self.advance();
+            let right = self.parse_and()?;
+            left = left || right;
+        }
+        Ok(left)
+    }
+
+    // and_expr = not_expr ("AND" not_expr)*
+    fn parse_and(&mut self) -> FlowResult<bool> {
+        let mut left = self.parse_not()?;
+        while self.peek() == Some("AND") {
+            self.advance();
+            let right = self.parse_not()?;
+            left = left && right;
+        }
+        Ok(left)
+    }
+
+    // not_expr = ["NOT"] comparison
+    fn parse_not(&mut self) -> FlowResult<bool> {
+        if self.peek() == Some("NOT") {
+            self.advance();
+            let val = self.parse_comparison()?;
+            return Ok(!val);
+        }
+        self.parse_comparison()
+    }
+
+    // comparison = atom (op atom)?
+    fn parse_comparison(&mut self) -> FlowResult<bool> {
+        if self.peek() == Some("(") {
+            self.advance();
+            let val = self.parse_or()?;
+            self.expect(")")?;
+            return Ok(val);
+        }
+
+        let left = self.parse_atom()?;
+
+        if let Some(op) = self.peek() {
+            match op {
+                ">" | "<" | ">=" | "<=" | "==" | "!=" => {
+                    let op = self.advance().unwrap();
+                    let right = self.parse_atom()?;
+                    Ok(compare_values(&left, &op, &right)?)
+                }
+                _ => {
+                    // No operator — truthy check
+                    Ok(is_truthy(&left))
+                }
+            }
+        } else {
+            Ok(is_truthy(&left))
+        }
+    }
+
+    // atom = literal | "value" | "inputs.xxx"
+    fn parse_atom(&mut self) -> FlowResult<serde_json::Value> {
+        let tok = self.advance().ok_or_else(|| FlowError::ExecutionError(
+            "unexpected end of expression".to_string()
+        ))?;
+
+        match tok.as_str() {
+            "value" => Ok(self.value.clone()),
+            "true" => Ok(serde_json::json!(true)),
+            "false" => Ok(serde_json::json!(false)),
+            "null" => Ok(serde_json::Value::Null),
+            _ if tok.starts_with('"') && tok.ends_with('"') => {
+                let s = tok[1..tok.len()-1].to_string();
+                Ok(serde_json::json!(s))
+            }
+            _ if tok.chars().next().map_or(false, |c| c.is_ascii_digit() || c == '-') => {
+                if let Ok(n) = tok.parse::<f64>() {
+                    Ok(serde_json::json!(n))
+                } else {
+                    Err(FlowError::ExecutionError(format!("invalid number: {}", tok)))
+                }
+            }
+            _ if tok.starts_with("inputs.") => {
+                let key = &tok[7..];
+                Ok(self.inputs.get(key).cloned().unwrap_or(serde_json::Value::Null))
+            }
+            _ => Err(FlowError::ExecutionError(format!(
+                "unexpected token: {}", tok
+            ))),
+        }
+    }
+}
+
+fn tokenize(expr: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut chars = expr.chars().peekable();
+
+    while let Some(&c) = chars.peek() {
+        match c {
+            ' ' | '\t' => { chars.next(); }
+            '(' | ')' => { tokens.push(c.to_string()); chars.next(); }
+            '>' | '<' | '!' => {
+                let mut op = c.to_string();
+                chars.next();
+                if chars.peek() == Some(&'=') {
+                    op.push('=');
+                    chars.next();
+                }
+                tokens.push(op);
+            }
+            '=' => {
+                chars.next();
+                if chars.peek() == Some(&'=') {
+                    chars.next();
+                    tokens.push("==".to_string());
+                } else {
+                    tokens.push("=".to_string());
+                }
+            }
+            '"' => {
+                chars.next();
+                let mut s = String::new();
+                while let Some(&ch) = chars.peek() {
+                    if ch == '"' {
+                        chars.next();
+                        break;
+                    }
+                    if ch == '\\' {
+                        chars.next();
+                        if let Some(&esc) = chars.peek() {
+                            s.push(esc);
+                            chars.next();
+                        }
+                    } else {
+                        s.push(ch);
+                        chars.next();
+                    }
+                }
+                tokens.push(format!("\"{}\"", s));
+            }
+            '-' if chars.clone().nth(1).map_or(false, |c| c.is_ascii_digit()) => {
+                let mut num = String::from('-');
+                chars.next();
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_ascii_digit() || ch == '.' {
+                        num.push(ch);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(num);
+            }
+            _ if c.is_ascii_digit() => {
+                let mut num = String::new();
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_ascii_digit() || ch == '.' {
+                        num.push(ch);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(num);
+            }
+            _ if c.is_ascii_alphabetic() || c == '_' => {
+                let mut word = String::new();
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' {
+                        word.push(ch);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(word);
+            }
+            _ => { chars.next(); }
+        }
+    }
+
+    tokens
+}
+
+fn compare_values(
+    left: &serde_json::Value,
+    op: &str,
+    right: &serde_json::Value,
+) -> FlowResult<bool> {
+    match op {
+        "==" => Ok(left == right),
+        "!=" => Ok(left != right),
+        ">" | "<" | ">=" | "<=" => {
+            let a = left.as_f64().unwrap_or(0.0);
+            let b = right.as_f64().unwrap_or(0.0);
+            match op {
+                ">" => Ok(a > b),
+                "<" => Ok(a < b),
+                ">=" => Ok(a >= b),
+                "<=" => Ok(a <= b),
+                _ => unreachable!(),
+            }
+        }
+        _ => Err(FlowError::ExecutionError(format!("unknown operator: {}", op))),
+    }
+}
+
+fn is_truthy(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(b) => *b,
+        serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+        serde_json::Value::String(s) => !s.is_empty(),
+        serde_json::Value::Array(a) => !a.is_empty(),
+        serde_json::Value::Object(o) => !o.is_empty(),
     }
 }
 
@@ -210,5 +519,93 @@ mod tests {
         inputs.insert("value".to_string(), serde_json::json!("hello"));
         let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
         assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_expression_simple_comparison() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"expression": "value > 10"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!(15));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_expression_and() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"expression": "value > 10 AND value < 20"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!(15));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_expression_or() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"expression": "value < 5 OR value > 10"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!(15));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_expression_not() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"expression": "NOT value == 0"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!(5));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_expression_parentheses() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"expression": "(value > 10) AND (value < 20)"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!(15));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_expression_string_equality() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"expression": "value == \"hello\""});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!("hello"));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_expression_truthy() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"expression": "value"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!("non-empty"));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_expression_falsy() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"expression": "value"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!(""));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], false);
     }
 }
