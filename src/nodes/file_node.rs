@@ -243,3 +243,46 @@ fn list_files(path: &PathBuf, node: &Node) -> FlowResult<HashMap<String, serde_j
     outputs.insert("file_path".into(), serde_json::json!(path.to_string_lossy().to_string()));
     Ok(outputs)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "file".to_string(),
+            label: "Test File".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_file_no_path() {
+        let node = make_node("file_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operation": "read"});
+        let inputs = HashMap::new();
+        let result = FileNode.execute(&node, &ctx, config, inputs).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_file_invalid_operation() {
+        let node = make_node("file_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operation": "invalid", "path": "test.txt"});
+        let inputs = HashMap::new();
+        let result = FileNode.execute(&node, &ctx, config, inputs).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_file_type_def() {
+        let def = FileNode.type_def();
+        assert_eq!(def.type_name, "file");
+        assert_eq!(def.outputs.len(), 4);
+    }
+}

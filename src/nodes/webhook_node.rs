@@ -97,3 +97,37 @@ impl NodeExecutor for WebhookNode {
         Ok(outputs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "webhook".to_string(),
+            label: "Test Webhook".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_webhook_no_payload() {
+        let node = make_node("webhook_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({});
+        let inputs = HashMap::new();
+        let result = WebhookNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["has_payload"], false);
+        assert_eq!(result["body"], serde_json::json!({}));
+    }
+
+    #[tokio::test]
+    async fn test_webhook_type_def() {
+        let def = WebhookNode.type_def();
+        assert_eq!(def.type_name, "webhook");
+        assert_eq!(def.outputs.len(), 4);
+    }
+}
