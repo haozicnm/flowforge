@@ -13,10 +13,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-D warnings"
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  # ── Windows: Flutter + Rust + Inno Setup installer ────────
+  # ── Windows: Flutter + Rust → zip ─────────────────────────
   build-windows:
     runs-on: windows-latest
     steps:
@@ -38,18 +37,15 @@ jobs:
       - name: Assemble distribution
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}" -replace 'v',''
-          $dist = "dist\$version"
+          $v = "${{ github.ref_name }}" -replace 'v',''
+          $dist = "FlowForge-v${v}-windows-x64"
           New-Item -ItemType Directory -Force -Path "$dist\data"
           New-Item -ItemType Directory -Force -Path "$dist\backend"
 
-          # Copy Rust backend
           Copy-Item "target\release\flowforge.exe" "$dist\backend\"
-
-          # Copy Flutter build
           Copy-Item "flutter_app\build\windows\x64\runner\Release\*" "$dist\" -Recurse
 
-          # Create launcher batch
+          # Launcher
           @"
           @echo off
           cd /d "%~dp0"
@@ -59,46 +55,16 @@ jobs:
           start "" "flowforge.exe"
           "@ | Out-File -Encoding ascii "$dist\FlowForge.bat"
 
-          # Create Inno Setup script
-          @"
-          [Setup]
-          AppName=FlowForge
-          AppVersion=$version
-          AppPublisher=FlowForge
-          DefaultDirName={autopf}\FlowForge
-          DefaultGroupName=FlowForge
-          OutputBaseFilename=FlowForge-v${version}-Setup
-          Compression=lzma2
-          SolidCompression=yes
-          OutputDir=installer
+          # Zip
+          Compress-Archive -Path "$dist\*" -DestinationPath "${dist}.zip" -Force
 
-          [Files]
-          Source: "$dist\*"; DestDir: "{app}"; Flags: recursesubdirs
-
-          [Icons]
-          Name: "{group}\FlowForge"; Filename: "{app}\FlowForge.bat"
-          Name: "{commondesktop}\FlowForge"; Filename: "{app}\FlowForge.bat"
-
-          [Run]
-          Filename: "{app}\FlowForge.bat"; Description: "Launch FlowForge"; Flags: postinstall nowait
-          "@ | Out-File -Encoding ascii "installer.iss"
-
-          # Build installer
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-
-      - name: Upload installer
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: flowforge-windows-installer
-          path: installer/FlowForge-*-Setup.exe
+          name: flowforge-windows
+          path: FlowForge-*-windows-x64.zip
 
-      - name: Upload raw binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: flowforge-windows-binary
-          path: dist/
-
-  # ── Linux: Flutter + Rust + tar.gz ────────────────────────
+  # ── Linux: Rust backend → tar.gz ──────────────────────────
   build-linux:
     runs-on: ubuntu-latest
     steps:
@@ -107,50 +73,35 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
 
-      - name: Setup Flutter
-        uses: ./.github/actions/setup-flutter
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build libgtk-3-dev
-
       - name: Rust build
         run: cargo build --release
 
-      - name: Flutter build
-        working-directory: flutter_app
-        run: flutter build linux --release
-
-      - name: Assemble distribution
+      - name: Package
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          dist="dist/$version"
+          v="${GITHUB_REF_NAME#v}"
+          dist="FlowForge-v${v}-linux-x64"
           mkdir -p "$dist/backend" "$dist/data"
-
           cp target/release/flowforge "$dist/backend/"
-          cp -r flutter_app/build/linux/x64/release/bundle/* "$dist/"
+          cp docs/*.md "$dist/"
 
-          cat > "$dist/flowforge.sh" << 'EOF'
+          cat > "$dist/flowforge.sh" << 'SCR'
           #!/usr/bin/env bash
           SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-          "$SCRIPT_DIR/backend/flowforge" &
-          sleep 1
-          export SERVER_URL=http://127.0.0.1:19529
-          "$SCRIPT_DIR/flowforge"
-          EOF
+          echo "FlowForge v1.0.0"
+          echo "Starting backend on http://127.0.0.1:19529 ..."
+          "$SCRIPT_DIR/backend/flowforge"
+          SCR
           chmod +x "$dist/flowforge.sh"
 
-          cd dist
-          tar -czf "FlowForge-v${version}-linux-x64.tar.gz" "$version/"
+          tar -czf "${dist}.tar.gz" "$dist/"
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: flowforge-linux
-          path: dist/FlowForge-*-linux-x64.tar.gz
+          path: FlowForge-*-linux-x64.tar.gz
 
-  # ── macOS: Flutter + Rust + zip ───────────────────────────
+  # ── macOS: Rust backend → tar.gz ──────────────────────────
   build-macos:
     runs-on: macos-latest
     steps:
@@ -159,28 +110,24 @@ jobs:
       - name: Setup Rust
         uses: ./.github/actions/setup-rust
 
-      - name: Setup Flutter
-        uses: ./.github/actions/setup-flutter
-
       - name: Rust build
         run: cargo build --release
 
-      - name: Flutter build
-        working-directory: flutter_app
-        run: flutter build macos --release
-
       - name: Package
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          cp target/release/flowforge "flutter_app/build/macos/Build/Products/Release/flowforge.app/Contents/MacOS/backend"
-          cd flutter_app/build/macos/Build/Products/Release
-          zip -r "$GITHUB_WORKSPACE/FlowForge-v${version}-macos.zip" flowforge.app
+          v="${GITHUB_REF_NAME#v}"
+          dist="FlowForge-v${v}-macos-x64"
+          mkdir -p "$dist/backend" "$dist/data"
+          cp target/release/flowforge "$dist/backend/"
+          cp docs/*.md "$dist/"
+
+          tar -czf "${dist}.tar.gz" "$dist/"
 
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: flowforge-macos
-          path: FlowForge-*-macos.zip
+          path: FlowForge-*-macos-x64.tar.gz
 
   # ── Create GitHub Release ─────────────────────────────────
   release:
@@ -196,11 +143,13 @@ jobs:
         with:
           path: artifacts
 
+      - name: List artifacts
+        run: find artifacts -type f -ls
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            artifacts/flowforge-windows-installer/*.exe
-            artifacts/flowforge-linux/*.tar.gz
-            artifacts/flowforge-macos/*.zip
+            artifacts/**/*.zip
+            artifacts/**/*.tar.gz
           generate_release_notes: true
