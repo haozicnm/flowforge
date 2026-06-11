@@ -17,6 +17,7 @@ pub struct DocxCreateNode;
 impl NodeExecutor for DocxCreateNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "docx_create".to_string(),
             display_name: "创建 Word".to_string(),
             description: "从文本内容生成 .docx 文件".to_string(),

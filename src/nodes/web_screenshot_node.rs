@@ -12,6 +12,7 @@ pub struct WebScreenshotNode;
 impl NodeExecutor for WebScreenshotNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "web_screenshot".to_string(),
             display_name: "网页截图".to_string(),
             description: "对页面或指定元素截图".to_string(),

@@ -5,8 +5,12 @@
 //! 2. Nodes receive already-resolved config
 //! 3. Execution state is explicit (not global singletons)
 //! 4. Each node gets its own execution context
+//!
+//! v2 improvements:
+//! - Config validation before execution (validate_config)
+//! - Parallel execution of independent nodes (same in-degree batch)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -90,6 +94,9 @@ impl Executor {
     }
 
     /// Execute a workflow.
+    ///
+    /// Nodes are grouped by topological level (same in-degree batch) and
+    /// independent nodes in the same level are executed in parallel.
     pub async fn execute(
         &self,
         workflow: &Workflow,
@@ -98,79 +105,22 @@ impl Executor {
         let nodes = workflow.nodes();
         let edges = workflow.edges();
 
-        // Build adjacency list for topological sort
-        let sorted = self.topological_sort(nodes, edges)?;
+        // Build levels for parallel execution
+        let levels = self.topological_levels(nodes, edges)?;
 
         // Validate: all variable references point to valid nodes
         self.validate_references(nodes)?;
 
         let state = Arc::new(RwLock::new(ExecutionState::new()));
 
-        // Execute in topological order
-        for node_id in &sorted {
-            let node = nodes
-                .iter()
-                .find(|n| &n.id == node_id)
-                .ok_or_else(|| FlowError::NodeNotFound(node_id.clone()))?;
-
-            // Mark as running
-            {
-                let mut s = state.write().await;
-                s.running.push(node_id.clone());
-            }
-            self.send_event(&event_tx, ExecutionEvent::NodeStarted { _node_id: node_id.clone() }).await;
-
-            // Resolve variables in config
-            let step_outputs = state.read().await.flat_outputs();
-            let resolved_config = resolver::resolve_node_config(node, &step_outputs)?;
-
-            // Collect inputs from upstream nodes, then drop the read lock
-            // BEFORE executing the node (node execution needs write lock for state update)
-            let inputs = {
-                let state_guard = state.read().await;
-                self.collect_inputs(node_id, edges, &state_guard)
-            };
-
-            // Execute the node
-            let executor = self.registry.get_executor(&node.node_type)?;
-            let mut ctx = match &self.webbridge {
-                Some(wb) => NodeContext::with_webbridge(wb.clone()),
-                None => NodeContext::empty(),
-            };
-            ctx.node_registry = Some(self.registry.clone());
-            ctx.webhook_store = self.webhook_store.clone();
-            match executor.execute(node, &ctx, resolved_config, inputs).await {
-                Ok(outputs) => {
-                    let mut s = state.write().await;
-                    s.node_outputs.insert(node_id.clone(), outputs.clone());
-                    s.completed.push(node_id.clone());
-                    s.running.retain(|id| id != node_id);
-
-                    self.send_event(
-                        &event_tx,
-                        ExecutionEvent::NodeCompleted {
-                            _node_id: node_id.clone(),
-                            _outputs: outputs,
-                        },
-                    )
-                    .await;
-                }
-                Err(e) => {
-                    let mut s = state.write().await;
-                    s.failed.push(node_id.clone());
-                    s.running.retain(|id| id != node_id);
-
-                    self.send_event(
-                        &event_tx,
-                        ExecutionEvent::NodeFailed {
-                            _node_id: node_id.clone(),
-                            _error: e.to_string(),
-                        },
-                    )
-                    .await;
-
-                    return Err(e);
-                }
+        // Execute level by level — nodes in the same level run in parallel
+        for level in &levels {
+            if level.len() == 1 {
+                // Single node — no need for parallelism overhead
+                self.execute_single_node(&level[0], nodes, edges, &state, &event_tx).await?;
+            } else {
+                // Multiple independent nodes — run in parallel
+                self.execute_parallel_nodes(level, nodes, edges, &state, &event_tx).await?;
             }
         }
 
@@ -182,22 +132,233 @@ impl Executor {
             ))
     }
 
-    /// Topological sort of nodes based on edges.
-    fn topological_sort(
+    /// Execute a single node: resolve → validate → execute.
+    async fn execute_single_node(
+        &self,
+        node_id: &str,
+        nodes: &[Node],
+        edges: &[Edge],
+        state: &Arc<RwLock<ExecutionState>>,
+        event_tx: &Option<tokio::sync::mpsc::Sender<ExecutionEvent>>,
+    ) -> FlowResult<()> {
+        let node = nodes
+            .iter()
+            .find(|n| &n.id == node_id)
+            .ok_or_else(|| FlowError::NodeNotFound(node_id.to_string()))?;
+
+        // Mark as running
+        {
+            let mut s = state.write().await;
+            s.running.push(node_id.to_string());
+        }
+        self.send_event(event_tx, ExecutionEvent::NodeStarted { _node_id: node_id.to_string() }).await;
+
+        // Resolve variables in config
+        let step_outputs = state.read().await.flat_outputs();
+        let resolved_config = resolver::resolve_node_config(node, &step_outputs)?;
+
+        // Validate config
+        let executor = self.registry.get_executor(&node.node_type)?;
+        if let Err(errors) = executor.validate_config(&resolved_config) {
+            let msg = errors.iter()
+                .map(|e| format!("{}: {}", e.field, e.message))
+                .collect::<Vec<_>>()
+                .join("; ");
+
+            let mut s = state.write().await;
+            s.failed.push(node_id.to_string());
+            s.running.retain(|id| id != node_id);
+
+            self.send_event(event_tx, ExecutionEvent::NodeFailed {
+                _node_id: node_id.to_string(),
+                _error: format!("validation failed: {}", msg),
+            }).await;
+
+            return Err(FlowError::ExecutionError(format!(
+                "Node '{}' config validation failed: {}", node_id, msg
+            )));
+        }
+
+        // Collect inputs from upstream nodes, then drop the read lock
+        let inputs = {
+            let state_guard = state.read().await;
+            self.collect_inputs(node_id, edges, &state_guard)
+        };
+
+        // Execute the node
+        let mut ctx = match &self.webbridge {
+            Some(wb) => NodeContext::with_webbridge(wb.clone()),
+            None => NodeContext::empty(),
+        };
+        ctx.node_registry = Some(self.registry.clone());
+        ctx.webhook_store = self.webhook_store.clone();
+
+        match executor.execute(node, &ctx, resolved_config, inputs).await {
+            Ok(outputs) => {
+                let mut s = state.write().await;
+                s.node_outputs.insert(node_id.to_string(), outputs.clone());
+                s.completed.push(node_id.to_string());
+                s.running.retain(|id| id != node_id);
+
+                self.send_event(event_tx, ExecutionEvent::NodeCompleted {
+                    _node_id: node_id.to_string(),
+                    _outputs: outputs,
+                }).await;
+            }
+            Err(e) => {
+                let mut s = state.write().await;
+                s.failed.push(node_id.to_string());
+                s.running.retain(|id| id != node_id);
+
+                self.send_event(event_tx, ExecutionEvent::NodeFailed {
+                    _node_id: node_id.to_string(),
+                    _error: e.to_string(),
+                }).await;
+
+                return Err(e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Execute multiple independent nodes in parallel.
+    async fn execute_parallel_nodes(
+        &self,
+        node_ids: &[String],
+        nodes: &[Node],
+        edges: &[Edge],
+        state: &Arc<RwLock<ExecutionState>>,
+        event_tx: &Option<tokio::sync::mpsc::Sender<ExecutionEvent>>,
+    ) -> FlowResult<()> {
+        // Collect inputs for all nodes first (while state is readable)
+        let mut node_tasks: Vec<(Node, HashMap<String, serde_json::Value>, Arc<dyn crate::nodes::traits::NodeExecutor>, serde_json::Value)> = Vec::new();
+
+        {
+            let state_guard = state.read().await;
+            let step_outputs = state_guard.flat_outputs();
+
+            for node_id in node_ids {
+                let node = nodes.iter().find(|n| &n.id == node_id)
+                    .ok_or_else(|| FlowError::NodeNotFound(node_id.clone()))?;
+
+                let resolved_config = resolver::resolve_node_config(node, &step_outputs)?;
+                let executor = self.registry.get_executor(&node.node_type)?;
+
+                // Validate config before queuing
+                if let Err(errors) = executor.validate_config(&resolved_config) {
+                    let msg = errors.iter()
+                        .map(|e| format!("{}: {}", e.field, e.message))
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    return Err(FlowError::ExecutionError(format!(
+                        "Node '{}' config validation failed: {}", node_id, msg
+                    )));
+                }
+
+                let inputs = self.collect_inputs(node_id, edges, &state_guard);
+                node_tasks.push((node.clone(), inputs, executor, resolved_config));
+            }
+        }
+
+        // Mark all as running
+        {
+            let mut s = state.write().await;
+            for node_id in node_ids {
+                s.running.push(node_id.clone());
+            }
+        }
+        for node_id in node_ids {
+            self.send_event(event_tx, ExecutionEvent::NodeStarted { _node_id: node_id.clone() }).await;
+        }
+
+        // Build context
+        let mut ctx = match &self.webbridge {
+            Some(wb) => NodeContext::with_webbridge(wb.clone()),
+            None => NodeContext::empty(),
+        };
+        ctx.node_registry = Some(self.registry.clone());
+        ctx.webhook_store = self.webhook_store.clone();
+
+        // Execute all in parallel using JoinSet
+        let mut join_set = tokio::task::JoinSet::new();
+
+        for (node, inputs, executor, resolved_config) in node_tasks {
+            let ctx_clone = ctx.clone();
+            join_set.spawn(async move {
+                let node_id = node.id.clone();
+                let result = executor.execute(&node, &ctx_clone, resolved_config, inputs).await;
+                (node_id, result)
+            });
+        }
+
+        // Collect results
+        let mut any_error: Option<(String, FlowError)> = None;
+        while let Some(result) = join_set.join_next().await {
+            match result {
+                Ok((node_id, Ok(outputs))) => {
+                    let mut s = state.write().await;
+                    s.node_outputs.insert(node_id.clone(), outputs.clone());
+                    s.completed.push(node_id.clone());
+                    s.running.retain(|id| *id != node_id);
+                    self.send_event(event_tx, ExecutionEvent::NodeCompleted {
+                        _node_id: node_id,
+                        _outputs: outputs,
+                    }).await;
+                }
+                Ok((node_id, Err(e))) => {
+                    let mut s = state.write().await;
+                    s.failed.push(node_id.clone());
+                    s.running.retain(|id| *id != node_id);
+                    self.send_event(event_tx, ExecutionEvent::NodeFailed {
+                        _node_id: node_id.clone(),
+                        _error: e.to_string(),
+                    }).await;
+                    any_error = Some((node_id, e));
+                }
+                Err(join_err) => {
+                    return Err(FlowError::ExecutionError(format!(
+                        "Parallel task panicked: {}", join_err
+                    )));
+                }
+            }
+        }
+
+        if let Some((node_id, e)) = any_error {
+            return Err(FlowError::ExecutionError(format!(
+                "Node '{}' failed in parallel batch: {}", node_id, e
+            )));
+        }
+
+        Ok(())
+    }
+
+    /// Topological sort — returns execution order (used by tests).
+    #[allow(dead_code)]
+    pub fn topological_sort(
         &self,
         nodes: &[Node],
         edges: &[Edge],
     ) -> FlowResult<Vec<String>> {
+        let levels = self.topological_levels(nodes, edges)?;
+        Ok(levels.into_iter().flatten().collect())
+    }
+
+    /// Topological level grouping — nodes in the same level have no dependencies
+    /// between them and can be executed in parallel.
+    fn topological_levels(
+        &self,
+        nodes: &[Node],
+        edges: &[Edge],
+    ) -> FlowResult<Vec<Vec<String>>> {
         let mut in_degree: HashMap<String, usize> = HashMap::new();
         let mut adj: HashMap<String, Vec<String>> = HashMap::new();
 
-        // Initialize
         for node in nodes {
             in_degree.entry(node.id.clone()).or_insert(0);
             adj.entry(node.id.clone()).or_default();
         }
 
-        // Build graph
         for edge in edges {
             *in_degree.entry(edge.to.clone()).or_insert(0) += 1;
             adj.entry(edge.from.clone())
@@ -205,36 +366,44 @@ impl Executor {
                 .push(edge.to.clone());
         }
 
-        // Kahn's algorithm
-        let mut queue: Vec<String> = in_degree
+        // BFS-based level grouping (Kahn's algorithm)
+        let mut current_level: Vec<String> = in_degree
             .iter()
             .filter(|(_, &deg)| deg == 0)
             .map(|(id, _)| id.clone())
             .collect();
 
-        let mut sorted = Vec::new();
+        let mut levels = Vec::new();
+        let mut visited = HashSet::new();
 
-        while let Some(current) = queue.pop() {
-            sorted.push(current.clone());
-            if let Some(neighbors) = adj.get(&current) {
-                for neighbor in neighbors {
-                    if let Some(deg) = in_degree.get_mut(neighbor) {
-                        *deg -= 1;
-                        if *deg == 0 {
-                            queue.push(neighbor.clone());
+        while !current_level.is_empty() {
+            let mut next_level = Vec::new();
+
+            for node_id in &current_level {
+                visited.insert(node_id.clone());
+                if let Some(neighbors) = adj.get(node_id) {
+                    for neighbor in neighbors {
+                        if let Some(deg) = in_degree.get_mut(neighbor) {
+                            *deg -= 1;
+                            if *deg == 0 {
+                                next_level.push(neighbor.clone());
+                            }
                         }
                     }
                 }
             }
+
+            levels.push(current_level);
+            current_level = next_level;
         }
 
-        if sorted.len() != nodes.len() {
+        if visited.len() != nodes.len() {
             return Err(FlowError::ExecutionError(
                 "Workflow contains a cycle".to_string(),
             ));
         }
 
-        Ok(sorted)
+        Ok(levels)
     }
 
     /// Validate that all variable references point to valid nodes.
@@ -288,5 +457,132 @@ impl Executor {
         if let Some(tx) = tx {
             let _ = tx.send(event).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::workflow::{Edge, Node, Workflow};
+    use crate::nodes::registry::NodeRegistry;
+    use chrono::Utc;
+
+    fn make_node(id: &str, node_type: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: node_type.to_string(),
+            label: id.to_string(),
+            config: serde_json::json!({}),
+            position: crate::engine::workflow::Position { x: 0.0, y: 0.0 },
+        }
+    }
+
+    fn make_edge(from: &str, to: &str) -> Edge {
+        Edge {
+            from: from.to_string(),
+            from_port: "out".to_string(),
+            to: to.to_string(),
+            to_port: "in".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_topological_levels_single_chain() {
+        let registry = Arc::new(NodeRegistry::new());
+        let executor = Executor::new(registry);
+
+        let nodes = vec![
+            make_node("a", "log"),
+            make_node("b", "log"),
+            make_node("c", "log"),
+        ];
+        let edges = vec![make_edge("a", "b"), make_edge("b", "c")];
+
+        let levels = executor.topological_levels(&nodes, &edges).unwrap();
+        assert_eq!(levels.len(), 3); // 3 levels for a chain
+        assert_eq!(levels[0], vec!["a"]);
+        assert_eq!(levels[1], vec!["b"]);
+        assert_eq!(levels[2], vec!["c"]);
+    }
+
+    #[tokio::test]
+    async fn test_topological_levels_parallel() {
+        let registry = Arc::new(NodeRegistry::new());
+        let executor = Executor::new(registry);
+
+        // a → b, a → c (b and c are independent, should be in same level)
+        let nodes = vec![
+            make_node("a", "log"),
+            make_node("b", "log"),
+            make_node("c", "log"),
+        ];
+        let edges = vec![make_edge("a", "b"), make_edge("a", "c")];
+
+        let levels = executor.topological_levels(&nodes, &edges).unwrap();
+        assert_eq!(levels.len(), 2); // 2 levels
+        assert_eq!(levels[0], vec!["a"]);
+        // b and c should be in the same level (order may vary)
+        assert_eq!(levels[1].len(), 2);
+        assert!(levels[1].contains(&"b".to_string()));
+        assert!(levels[1].contains(&"c".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_topological_levels_diamond() {
+        let registry = Arc::new(NodeRegistry::new());
+        let executor = Executor::new(registry);
+
+        // Diamond: a → b, a → c, b → d, c → d
+        let nodes = vec![
+            make_node("a", "log"),
+            make_node("b", "log"),
+            make_node("c", "log"),
+            make_node("d", "log"),
+        ];
+        let edges = vec![
+            make_edge("a", "b"),
+            make_edge("a", "c"),
+            make_edge("b", "d"),
+            make_edge("c", "d"),
+        ];
+
+        let levels = executor.topological_levels(&nodes, &edges).unwrap();
+        assert_eq!(levels.len(), 3); // a | b,c | d
+        assert_eq!(levels[0], vec!["a"]);
+        assert_eq!(levels[1].len(), 2);
+        assert_eq!(levels[2], vec!["d"]);
+    }
+
+    #[tokio::test]
+    async fn test_cycle_detection() {
+        let registry = Arc::new(NodeRegistry::new());
+        let executor = Executor::new(registry);
+
+        let nodes = vec![make_node("a", "log"), make_node("b", "log")];
+        let edges = vec![make_edge("a", "b"), make_edge("b", "a")];
+
+        let result = executor.topological_levels(&nodes, &edges);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validation_called() {
+        // Use the log node which has default validation (accepts everything)
+        let registry = Arc::new(NodeRegistry::new());
+        let executor = Executor::new(registry);
+
+        let workflow = Workflow {
+            id: "test".to_string(),
+            name: "Test".to_string(),
+            description: String::new(),
+            nodes: vec![make_node("log_1", "log")],
+            edges: vec![],
+            variables: vec![],
+            owner_id: None,
+            created_at: Utc::now(),
+        };
+
+        let result = executor.execute(&workflow, None).await;
+        assert!(result.is_ok());
     }
 }

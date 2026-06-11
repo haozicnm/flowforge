@@ -20,6 +20,7 @@ pub struct ShellNode;
 impl NodeExecutor for ShellNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "shell".to_string(),
             display_name: "Shell 命令".to_string(),
             description: "执行 Shell 命令（仅应急使用，优先用专用节点）".to_string(),

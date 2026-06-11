@@ -103,6 +103,7 @@ async fn execute_body(
 impl NodeExecutor for LoopNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "loop".to_string(),
             display_name: "循环".to_string(),
             description: "遍历集合或重复执行 N 次。body 内的节点可引用 {{item}} / {{index}}".to_string(),

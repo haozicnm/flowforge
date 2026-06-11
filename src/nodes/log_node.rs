@@ -12,6 +12,7 @@ pub struct LogNode;
 impl NodeExecutor for LogNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "log".to_string(),
             display_name: "日志输出".to_string(),
             description: "将数据输出到执行日志".to_string(),

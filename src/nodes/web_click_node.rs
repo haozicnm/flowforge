@@ -12,6 +12,7 @@ pub struct WebClickNode;
 impl NodeExecutor for WebClickNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "web_click".to_string(),
             display_name: "点击元素".to_string(),
             description: "点击页面上的元素（CSS 选择器或 ref）".to_string(),

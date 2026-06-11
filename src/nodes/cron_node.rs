@@ -39,6 +39,7 @@ fn next_cron_time(cron_expr: &str) -> Result<u64, String> {
 impl NodeExecutor for CronNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "cron".to_string(),
             display_name: "定时触发器".to_string(),
             description: "按 Cron 表达式定时触发工作流。支持 */N 分钟的简单格式。".to_string(),

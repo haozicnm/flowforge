@@ -17,6 +17,7 @@ pub struct DocxReadNode;
 impl NodeExecutor for DocxReadNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "docx_read".to_string(),
             display_name: "读取 Word".to_string(),
             description: "从 .docx 文件提取文本内容".to_string(),

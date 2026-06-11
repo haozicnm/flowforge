@@ -16,6 +16,7 @@ pub struct EmailSendNode;
 impl NodeExecutor for EmailSendNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "email_send".to_string(),
             display_name: "发送邮件".to_string(),
             description: "通过 SMTP 发送邮件".to_string(),

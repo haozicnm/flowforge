@@ -13,6 +13,7 @@ pub struct ExcelReadNode;
 impl NodeExecutor for ExcelReadNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "excel_read".to_string(),
             display_name: "读取 Excel".to_string(),
             description: "从 Excel 文件读取数据".to_string(),

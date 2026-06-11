@@ -12,6 +12,7 @@ pub struct ConditionNode;
 impl NodeExecutor for ConditionNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "condition".to_string(),
             display_name: "条件判断".to_string(),
             description: "根据条件表达式分支执行".to_string(),

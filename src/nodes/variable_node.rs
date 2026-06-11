@@ -12,6 +12,7 @@ pub struct VariableNode;
 impl NodeExecutor for VariableNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "variable".to_string(),
             display_name: "变量赋值".to_string(),
             description: "设置变量值，支持类型转换".to_string(),

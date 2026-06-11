@@ -19,6 +19,7 @@ pub struct HttpNode;
 impl NodeExecutor for HttpNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "http".to_string(),
             display_name: "HTTP 请求".to_string(),
             description: "发送 HTTP 请求并返回响应".to_string(),

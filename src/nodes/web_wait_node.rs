@@ -12,6 +12,7 @@ pub struct WebWaitNode;
 impl NodeExecutor for WebWaitNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "web_wait".to_string(),
             display_name: "等待元素".to_string(),
             description: "等待页面元素出现或文本出现".to_string(),

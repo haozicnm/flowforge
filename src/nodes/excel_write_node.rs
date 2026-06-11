@@ -13,6 +13,7 @@ pub struct ExcelWriteNode;
 impl NodeExecutor for ExcelWriteNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "excel_write".to_string(),
             display_name: "写入 Excel".to_string(),
             description: "将数据写入 Excel 文件".to_string(),

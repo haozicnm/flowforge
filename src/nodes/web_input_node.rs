@@ -12,6 +12,7 @@ pub struct WebInputNode;
 impl NodeExecutor for WebInputNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "web_input".to_string(),
             display_name: "输入文本".to_string(),
             description: "在页面输入框中输入文本".to_string(),

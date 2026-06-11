@@ -12,6 +12,7 @@ pub struct WebExtractNode;
 impl NodeExecutor for WebExtractNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "web_extract".to_string(),
             display_name: "提取数据".to_string(),
             description: "从页面提取文本、HTML、属性、表格、链接等".to_string(),

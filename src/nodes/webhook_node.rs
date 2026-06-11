@@ -18,6 +18,7 @@ pub struct WebhookNode;
 impl NodeExecutor for WebhookNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "webhook".to_string(),
             display_name: "Webhook".to_string(),
             description: "接收外部 HTTP 请求作为触发器".to_string(),

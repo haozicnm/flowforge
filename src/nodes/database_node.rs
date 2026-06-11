@@ -17,6 +17,7 @@ pub struct DatabaseNode;
 impl NodeExecutor for DatabaseNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "database".to_string(),
             display_name: "数据库查询".to_string(),
             description: "执行 SQL 查询 (SQLite)。支持 SELECT / INSERT / UPDATE / DELETE".to_string(),

@@ -15,6 +15,7 @@ pub struct PdfExtractNode;
 impl NodeExecutor for PdfExtractNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "pdf_extract".to_string(),
             display_name: "PDF 文本提取".to_string(),
             description: "从 PDF 文件中提取文本内容".to_string(),

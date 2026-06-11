@@ -56,6 +56,10 @@ pub struct NodeTypeDef {
     /// Unique type name (e.g., "http", "shell", "condition").
     pub type_name: String,
 
+    /// Semantic version (e.g., "1.0", "2.0"). Used for `type@version` syntax.
+    #[serde(default = "default_version")]
+    pub version: String,
+
     /// Human-readable display name.
     pub display_name: String,
 
@@ -73,6 +77,10 @@ pub struct NodeTypeDef {
 
     /// JSON Schema for the node's config field.
     pub config_schema: serde_json::Value,
+}
+
+fn default_version() -> String {
+    "1.0".to_string()
 }
 
 /// Definition of an input or output port.
@@ -94,11 +102,36 @@ fn default_port_type() -> String {
     "any".to_string()
 }
 
+/// Validation error with context.
+#[derive(Debug, Clone)]
+pub struct ValidationError {
+    pub field: String,
+    pub message: String,
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.field, self.message)
+    }
+}
+
 /// The core trait that all nodes must implement.
 #[async_trait]
 pub trait NodeExecutor: Send + Sync {
     /// Return the type definition for this node.
     fn type_def(&self) -> NodeTypeDef;
+
+    /// Validate config before execution. Called by the executor after variable
+    /// resolution but before execute(). Return Ok(()) if valid, or a list of
+    /// validation errors.
+    ///
+    /// Default implementation: accept everything (no validation).
+    fn validate_config(
+        &self,
+        _config: &serde_json::Value,
+    ) -> Result<(), Vec<ValidationError>> {
+        Ok(())
+    }
 
     /// Execute this node with resolved config.
     ///

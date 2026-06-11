@@ -17,6 +17,7 @@ pub struct FileNode;
 impl NodeExecutor for FileNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "file".to_string(),
             display_name: "文件操作".to_string(),
             description: "文件操作：读取、写入、追加、删除、移动、列出目录".to_string(),

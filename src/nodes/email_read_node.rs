@@ -16,6 +16,7 @@ pub struct EmailReadNode;
 impl NodeExecutor for EmailReadNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "email_read".to_string(),
             display_name: "读取邮件".to_string(),
             description: "通过 IMAP 读取邮件".to_string(),

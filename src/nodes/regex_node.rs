@@ -12,6 +12,7 @@ pub struct RegexNode;
 impl NodeExecutor for RegexNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "regex".to_string(),
             display_name: "正则匹配".to_string(),
             description: "正则表达式匹配、提取、替换".to_string(),

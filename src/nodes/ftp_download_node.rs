@@ -15,6 +15,7 @@ pub struct FtpDownloadNode;
 impl NodeExecutor for FtpDownloadNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "ftp_download".to_string(),
             display_name: "FTP 下载".to_string(),
             description: "通过 FTP/FTPS 下载文件".to_string(),

@@ -12,6 +12,7 @@ pub struct JsonNode;
 impl NodeExecutor for JsonNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "json".to_string(),
             display_name: "JSON 处理".to_string(),
             description: "解析、提取、合并 JSON 数据".to_string(),

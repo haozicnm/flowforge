@@ -18,6 +18,7 @@ pub struct NotificationNode;
 impl NodeExecutor for NotificationNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "notification".to_string(),
             display_name: "通知".to_string(),
             description: "发送通知 (Slack Webhook / Email SMTP / 自定义 Webhook)".to_string(),

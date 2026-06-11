@@ -12,6 +12,7 @@ pub struct WebNavigateNode;
 impl NodeExecutor for WebNavigateNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "web_navigate".to_string(),
             display_name: "打开网页".to_string(),
             description: "在浏览器中打开指定 URL".to_string(),

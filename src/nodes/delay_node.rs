@@ -12,6 +12,7 @@ pub struct DelayNode;
 impl NodeExecutor for DelayNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "delay".to_string(),
             display_name: "延时等待".to_string(),
             description: "暂停执行指定时间".to_string(),

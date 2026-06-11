@@ -12,6 +12,7 @@ pub struct ScriptNode;
 impl NodeExecutor for ScriptNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "script".to_string(),
             display_name: "脚本".to_string(),
             description: "运行 Rhai 脚本进行数据转换".to_string(),

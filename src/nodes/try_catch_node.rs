@@ -15,6 +15,7 @@ pub struct TryCatchNode;
 impl NodeExecutor for TryCatchNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "try_catch".to_string(),
             display_name: "异常捕获".to_string(),
             description: "捕获上游错误，路由到错误处理分支".to_string(),

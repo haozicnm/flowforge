@@ -15,6 +15,7 @@ pub struct ImageProcessNode;
 impl NodeExecutor for ImageProcessNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "image_process".to_string(),
             display_name: "图片处理".to_string(),
             description: "图片处理：缩放、裁剪、水印、格式转换".to_string(),

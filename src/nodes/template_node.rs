@@ -12,6 +12,7 @@ pub struct TemplateNode;
 impl NodeExecutor for TemplateNode {
     fn type_def(&self) -> NodeTypeDef {
         NodeTypeDef {
+            version: "1.0".to_string(),
             type_name: "template".to_string(),
             display_name: "文本模板".to_string(),
             description: "用 {{var}} 语法渲染文本模板".to_string(),
