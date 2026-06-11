@@ -6,7 +6,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../api/flowforge_api.dart';
 import '../theme/flowforge_theme.dart';
-import '../widgets/ff_widgets.dart';
 
 /// Callback when canvas nodes/edges change.
 typedef CanvasChanged = void Function(List<WorkflowNode> nodes, List<WorkflowEdge> edges);
@@ -109,9 +108,6 @@ class _CanvasEditorState extends State<CanvasEditor> {
 
   // Multi-select state (box selection)
   final Set<String> _selectedNodeIds = {};
-  Offset? _selectionStart;
-  Offset? _selectionEnd;
-  bool _isBoxSelecting = false;
 
   // Node size
   static const double _nodeWidth = 180.0;
@@ -153,15 +149,6 @@ class _CanvasEditorState extends State<CanvasEditor> {
     setState(() {});
   }
 
-  // Keyboard shortcuts
-  late final Map<SingleActivator, Intent> _shortcuts = {
-    const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _UndoIntent(),
-    const SingleActivator(LogicalKeyboardKey.keyY, control: true): _RedoIntent(),
-    const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): _RedoIntent(),
-    const SingleActivator(LogicalKeyboardKey.delete): _DeleteIntent(),
-    const SingleActivator(LogicalKeyboardKey.backspace): _DeleteIntent(),
-  };
-
   void _handleKey(LogicalKeyboardKey key, bool control, bool shift) {
     if (control && key == LogicalKeyboardKey.keyZ && !shift) _undo();
     if (control && key == LogicalKeyboardKey.keyY) _redo();
@@ -182,9 +169,6 @@ class _CanvasEditorState extends State<CanvasEditor> {
     if (key == LogicalKeyboardKey.escape) {
       setState(() {
         _selectedNodeIds.clear();
-        _selectionStart = null;
-        _selectionEnd = null;
-        _isBoxSelecting = false;
       });
     }
   }
@@ -232,13 +216,6 @@ class _CanvasEditorState extends State<CanvasEditor> {
     setState(() {
       _selectedNodeIds.clear();
     });
-  }
-
-  /// Ungroup nodes in the given group.
-  void _ungroupNodes(String groupId) {
-    final newGroups = widget.groups.where((g) => g.id != groupId).toList();
-    widget.onGroupsChanged?.call(newGroups);
-    setState(() {});
   }
 
   @override
@@ -536,13 +513,6 @@ class _CanvasEditorState extends State<CanvasEditor> {
     );
   }
 
-  Offset _screenToWorld(Offset screen) {
-    return Offset(
-      (screen.dx - _panOffset.dx) / _scale,
-      (screen.dy - _panOffset.dy) / _scale,
-    );
-  }
-
   void _zoomTo(double newScale) {
     setState(() => _scale = newScale.clamp(0.2, 3.0));
   }
@@ -643,10 +613,7 @@ class _CanvasEditorState extends State<CanvasEditor> {
   }
 }
 
-// --- Undo/Redo intents ---
-class _UndoIntent extends Intent {}
-class _RedoIntent extends Intent {}
-class _DeleteIntent extends Intent {}
+
 
 /// Undo/redo indicator buttons.
 class _UndoRedoIndicator extends StatelessWidget {

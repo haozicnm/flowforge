@@ -39,7 +39,6 @@ class _GeneralSettingsState extends State<GeneralSettings> {
 
   @override
   Widget build(BuildContext context) {
-    final ext = FlowForgeThemeExtension.of(context);
     final theme = Theme.of(context);
 
     return Padding(

@@ -515,7 +515,7 @@ class FfDropdown<T> extends StatelessWidget {
     return SizedBox(
       width: width,
       child: DropdownButtonFormField<T>(
-        value: value,
+        initialValue: value,
         isExpanded: true,
         decoration: InputDecoration(
           hintText: hintText,
@@ -683,7 +683,7 @@ class FfToggle extends StatelessWidget {
           child: Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: ext.brandColor,
+            activeThumbColor: ext.brandColor,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ),

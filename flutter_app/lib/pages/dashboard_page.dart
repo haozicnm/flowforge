@@ -96,7 +96,7 @@ class _DashboardPageState extends State<DashboardPage> {
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: 'dashboard.nameHint'.tr(),
             border: OutlineInputBorder(),
           ),
@@ -152,7 +152,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       : ext.brandColor,
                   borderRadius: BorderRadius.circular(FlowForgeRadius.md),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     FfSvg(FfIconName.add, size: 16, color: Colors.white),
@@ -182,7 +182,7 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           FfSvg(FfIconName.error, size: 48, color: theme.colorScheme.error),
           const SizedBox(height: FlowForgeSpacing.md),
-          const FfText('dashboard.connectionFailed'.tr(), fontSize: 18, fontWeight: FontWeight.w600),
+          FfText('dashboard.connectionFailed'.tr(), fontSize: 18, fontWeight: FontWeight.w600),
           const SizedBox(height: FlowForgeSpacing.sm),
           FfText(_error!, fontSize: 13),
           const SizedBox(height: FlowForgeSpacing.md),
@@ -205,7 +205,7 @@ class _DashboardPageState extends State<DashboardPage> {
         children: [
           FfSvg(FfIconName.workspaces, size: 64, color: ext.brandColor.withValues(alpha: 0.5)),
           const SizedBox(height: FlowForgeSpacing.md),
-          const FfText('dashboard.emptyTitle'.tr(), fontSize: 18, fontWeight: FontWeight.w600),
+          FfText('dashboard.emptyTitle'.tr(), fontSize: 18, fontWeight: FontWeight.w600),
           const SizedBox(height: FlowForgeSpacing.sm),
           FfText(
             'dashboard.emptySubtitle'.tr(),

@@ -36,7 +36,6 @@ class _PluginSettingsState extends State<PluginSettings> {
 
   @override
   Widget build(BuildContext context) {
-    final ext = FlowForgeThemeExtension.of(context);
     final theme = Theme.of(context);
 
     return Padding(

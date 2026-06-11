@@ -6,7 +6,6 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import '../theme/flowforge_theme.dart';
 
 // ─── Icon palette ────────────────────────────────────────────────
@@ -123,7 +122,6 @@ Color ffNodeColor(String type) {
     case 'variable': return const Color(0xFF8B5CF6);
     // 网络
     case 'http': return const Color(0xFF3B82F6);  // blue
-    case 'webhook': return const Color(0xFF10B981);
     // Web 自动化
     case 'web_navigate': return const Color(0xFFEC4899); // pink
     case 'web_click': return const Color(0xFFEC4899);
@@ -300,7 +298,6 @@ class _SvgPathPainter extends CustomPainter {
           final rx = double.parse(tokens[i + 1]) * sx;
           final ry = double.parse(tokens[i + 2]) * sy;
           // ignore rotation
-          final largeArc = double.parse(tokens[i + 4]) != 0;
           final sweep = double.parse(tokens[i + 5]) != 0;
           final x = double.parse(tokens[i + 6]) * sx;
           final y = double.parse(tokens[i + 7]) * sy;

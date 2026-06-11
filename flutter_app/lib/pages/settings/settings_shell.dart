@@ -96,9 +96,6 @@ class _SettingsMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ext = FlowForgeThemeExtension.of(context);
-    final theme = Theme.of(context);
-
     return Padding(
       padding: const EdgeInsets.only(right: FlowForgeSpacing.sm),
       child: Column(

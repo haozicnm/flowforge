@@ -1,7 +1,6 @@
 // JSON/YAML code editor with syntax highlighting.
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../theme/flowforge_theme.dart';
 
 /// A simple JSON code editor with syntax highlighting and line numbers.
 class CodeEditor extends StatefulWidget {

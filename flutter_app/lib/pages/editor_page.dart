@@ -24,10 +24,8 @@ class _EditorPageState extends State<EditorPage> {
   Workflow? _workflow;
   bool _loading = false;
   bool _isExecuting = false;
-  bool _isStepping = false;
   List<String> _stepCompleted = [];
   List<String> _stepFailed = [];
-  bool _stepHasMore = false;
   bool _isSaving = false;
   String _output = '';
   String? _error;
@@ -173,7 +171,7 @@ class _EditorPageState extends State<EditorPage> {
 
   Future<void> _step() async {
     if (_workflow == null) return;
-    setState(() { _isStepping = true; _isExecuting = true; _output = '单步执行中...'; });
+    setState(() { _isExecuting = true; _output = '单步执行中...'; });
     try {
       await _save();
       final result = await widget.api.executeStep(
@@ -190,12 +188,10 @@ class _EditorPageState extends State<EditorPage> {
           buf.writeln('还有更多节点待执行 (F10 继续)');
         } else {
           buf.writeln('✅ 所有节点执行完毕');
-          _isStepping = false;
         }
         setState(() {
           _stepCompleted = result.completed;
           _stepFailed = result.failed;
-          _stepHasMore = result.hasMore;
           _failedNodes.clear();
           _failedNodes.addAll(result.failed);
           result.nodeOutputs.forEach((nodeId, outputs) {
@@ -204,22 +200,18 @@ class _EditorPageState extends State<EditorPage> {
         });
       } else if (result.status == 'already_done') {
         buf.writeln('✅ 所有节点已执行完毕');
-        _isStepping = false;
       } else {
         buf.writeln('❌ 步进失败: ${result.error ?? "未知错误"}');
-        _isStepping = false;
       }
       setState(() { _output = buf.toString(); _isExecuting = false; });
     } catch (e) {
-      setState(() { _output = '❌ 步进出错: $e'; _isExecuting = false; _isStepping = false; });
+      setState(() { _output = '❌ 步进出错: $e'; _isExecuting = false; });
     }
   }
 
   void _resetStepState() {
     _stepCompleted = [];
     _stepFailed = [];
-    _stepHasMore = false;
-    _isStepping = false;
   }
 
   void _addNode() {
@@ -239,7 +231,7 @@ class _EditorPageState extends State<EditorPage> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: selectedType,
+              initialValue: selectedType,
               decoration: InputDecoration(labelText: '类型', border: const OutlineInputBorder()),
               items: _nodeTypes.map((t) => DropdownMenuItem(
                 value: t.typeName,
@@ -294,14 +286,14 @@ class _EditorPageState extends State<EditorPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               DropdownButtonFormField<String>(
-                value: fromNode,
+                initialValue: fromNode,
                 decoration: const InputDecoration(labelText: '从', border: OutlineInputBorder()),
                 items: _nodes.map((n) => DropdownMenuItem(value: n.id, child: Text(n.label.isNotEmpty ? n.label : n.id))).toList(),
                 onChanged: (v) => setDialogState(() => fromNode = v ?? fromNode),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: toNode,
+                initialValue: toNode,
                 decoration: const InputDecoration(labelText: '到', border: OutlineInputBorder()),
                 items: _nodes.map((n) => DropdownMenuItem(value: n.id, child: Text(n.label.isNotEmpty ? n.label : n.id))).toList(),
                 onChanged: (v) => setDialogState(() => toNode = v ?? toNode),
