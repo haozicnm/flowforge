@@ -52,6 +52,7 @@ reqwest = { version = "0.12", features = ["json", "multipart"] }
 
 # WebSocket client (for webbridge browser automation)
 tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+lettre = { version = "0.11", features = ["tokio1", "tokio1-native-tls"] }
 futures-util = "0.3"
 
 # Excel read (calamine)

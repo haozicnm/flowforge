@@ -41,6 +41,9 @@ pub mod database_node;
 // Notification
 pub mod notification_node;
 
+// Email
+pub mod email_send_node;
+
 // File operations
 pub mod file_node;
 

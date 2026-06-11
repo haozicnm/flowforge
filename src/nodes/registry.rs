@@ -61,6 +61,9 @@ impl NodeRegistry {
         // === Notification ===
         registry.register_builtin::<super::notification_node::NotificationNode>();
 
+        // === Email ===
+        registry.register_builtin::<super::email_send_node::EmailSendNode>();
+
         // === File ===
         registry.register_builtin::<super::file_node::FileNode>();
 
