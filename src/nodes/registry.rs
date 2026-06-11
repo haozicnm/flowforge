@@ -69,6 +69,9 @@ impl NodeRegistry {
         registry.register_builtin::<super::ftp_upload_node::FtpUploadNode>();
         registry.register_builtin::<super::ftp_download_node::FtpDownloadNode>();
 
+        // === Media ===
+        registry.register_builtin::<super::image_process_node::ImageProcessNode>();
+
         // === File ===
         registry.register_builtin::<super::file_node::FileNode>();
 
