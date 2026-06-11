@@ -124,6 +124,8 @@ async fn main() {
         .route("/api/schedules/:id/trigger", post(api::trigger_schedule))
 
         // API Gateway routes
+        .route("/api/openapi.json", get(api::openapi::openapi_spec))
+        .route("/api/docs", get(api::openapi::swagger_ui))
         .route("/api/gateway", get(api::gateway_list))
         .route("/api/gateway/publish", post(api::gateway_publish))
         .route("/api/gateway/unpublish/:path", delete(api::gateway_unpublish))

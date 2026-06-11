@@ -13,6 +13,8 @@
 //! - POST /api/workflows/:id/execute — execute a workflow
 //! - POST /api/webhook/:workflow_id/:node_id — webhook trigger
 
+pub mod openapi;
+
 use std::collections::HashMap;
 
 use axum::{
