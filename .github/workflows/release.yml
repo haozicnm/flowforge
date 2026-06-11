@@ -67,14 +67,48 @@ jobs:
           start "" "flowforge.exe"
           "@ | Out-File -Encoding ascii "$dist\FlowForge.bat"
 
-          # Zip
+          # Zip (portable)
           Compress-Archive -Path "$dist\*" -DestinationPath "${dist}.zip" -Force
 
-      - name: Upload
+          # Inno Setup installer
+          $iss = @"
+          [Setup]
+          AppName=FlowForge
+          AppVersion=$v
+          AppPublisher=FlowForge
+          AppPublisherURL=https://github.com/haozicnm/flowforge
+          DefaultDirName={autopf}\FlowForge
+          DefaultGroupName=FlowForge
+          OutputBaseFilename=FlowForge-v${v}-Setup
+          Compression=lzma2
+          SolidCompression=yes
+          OutputDir=installer
+          PrivilegesRequired=lowest
+
+          [Files]
+          Source: "$dist\*"; DestDir: "{app}"; Flags: recursesubdirs
+
+          [Icons]
+          Name: "{group}\FlowForge"; Filename: "{app}\FlowForge.bat"
+          Name: "{commondesktop}\FlowForge"; Filename: "{app}\FlowForge.bat"
+
+          [Run]
+          Filename: "{app}\FlowForge.bat"; Description: "Launch FlowForge"; Flags: postinstall nowait
+          "@
+          $iss | Out-File -Encoding ascii "installer.iss"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "installer.iss"
+
+      - name: Upload zip
         uses: actions/upload-artifact@v4
         with:
-          name: flowforge-windows
+          name: flowforge-windows-zip
           path: FlowForge-*-windows-x64.zip
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowforge-windows-installer
+          path: installer/FlowForge-*-Setup.exe
 
   # ── Linux: Rust backend → tar.gz ──────────────────────────
   build-linux:
@@ -164,4 +198,5 @@ jobs:
           files: |
             artifacts/**/*.zip
             artifacts/**/*.tar.gz
+            artifacts/**/*.exe
           generate_release_notes: true
