@@ -108,3 +108,75 @@ impl NodeExecutor for RegexNode {
         Ok(outputs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "regex".to_string(),
+            label: "Test Regex".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_regex_match() {
+        let node = make_node("regex_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"pattern": r"(\d+)-(\d+)", "operation": "match"});
+        let mut inputs = HashMap::new();
+        inputs.insert("text".to_string(), serde_json::json!("2024-01-15"));
+        let result = RegexNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["count"], 3); // full match + 2 groups
+    }
+
+    #[tokio::test]
+    async fn test_regex_replace() {
+        let node = make_node("regex_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"pattern": r"\d+", "operation": "replace", "replacement": "X"});
+        let mut inputs = HashMap::new();
+        inputs.insert("text".to_string(), serde_json::json!("abc 123 def 456"));
+        let result = RegexNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], "abc X def X");
+    }
+
+    #[tokio::test]
+    async fn test_regex_find_all() {
+        let node = make_node("regex_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"pattern": r"\d+", "operation": "find_all"});
+        let mut inputs = HashMap::new();
+        inputs.insert("text".to_string(), serde_json::json!("abc 123 def 456"));
+        let result = RegexNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["matches"], serde_json::json!(["123", "456"]));
+        assert_eq!(result["count"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_regex_split() {
+        let node = make_node("regex_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"pattern": r",\s*", "operation": "split"});
+        let mut inputs = HashMap::new();
+        inputs.insert("text".to_string(), serde_json::json!("a, b, c"));
+        let result = RegexNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["matches"], serde_json::json!(["a", "b", "c"]));
+    }
+
+    #[tokio::test]
+    async fn test_regex_invalid_pattern() {
+        let node = make_node("regex_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"pattern": "[invalid", "operation": "match"});
+        let mut inputs = HashMap::new();
+        inputs.insert("text".to_string(), serde_json::json!("test"));
+        let result = RegexNode.execute(&node, &ctx, config, inputs).await;
+        assert!(result.is_err());
+    }
+}
