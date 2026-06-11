@@ -165,13 +165,10 @@ impl WorkflowStorage {
             let entry = entry.map_err(|e| format!("entry: {}", e))?;
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") { continue; }
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
-                    if let Ok(wf) = serde_json::from_str::<Workflow>(&content) {
-                        if self.save(&wf).is_ok() { migrated += 1; }
-                    }
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                if let Ok(wf) = serde_json::from_str::<Workflow>(&content) {
+                    if self.save(&wf).is_ok() { migrated += 1; }
                 }
-                Err(_) => {}
             }
         }
         Ok(migrated)

@@ -9,6 +9,8 @@
 //! v2 improvements:
 //! - Config validation before execution (validate_config)
 //! - Parallel execution of independent nodes (same in-degree batch)
+/// Type alias for webhook store (complex Arc<Mutex<HashMap<...>>>)
+type WebhookStore = Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -36,6 +38,12 @@ pub struct ExecutionState {
 
     /// Currently executing nodes.
     pub running: Vec<String>,
+}
+
+impl Default for ExecutionState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ExecutionState {
@@ -75,7 +83,7 @@ pub enum ExecutionEvent {
 pub struct Executor {
     registry: Arc<NodeRegistry>,
     webbridge: Option<WebBridgeState>,
-    webhook_store: Option<Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>>,
+    webhook_store: Option<WebhookStore>,
 }
 
 impl Executor {
@@ -140,7 +148,7 @@ impl Executor {
     pub async fn execute_step(
         &self,
         workflow: &Workflow,
-        mut state: ExecutionState,
+        state: ExecutionState,
     ) -> FlowResult<(ExecutionState, Vec<String>, bool)> {
         let nodes = workflow.nodes();
         let edges = workflow.edges();
@@ -186,6 +194,7 @@ impl Executor {
     }
 
     /// Get the execution plan (topological levels) without executing.
+    #[allow(dead_code)]
     pub fn get_execution_plan(&self, workflow: &Workflow) -> FlowResult<Vec<Vec<String>>> {
         self.topological_levels(workflow.nodes(), workflow.edges())
     }
@@ -202,7 +211,7 @@ impl Executor {
     ) -> FlowResult<()> {
         let node = nodes
             .iter()
-            .find(|n| &n.id == node_id)
+            .find(|n| n.id == node_id)
             .ok_or_else(|| FlowError::NodeNotFound(node_id.to_string()))?;
 
         // Mark as running
@@ -300,6 +309,7 @@ impl Executor {
         event_tx: &Option<tokio::sync::mpsc::Sender<ExecutionEvent>>,
     ) -> FlowResult<()> {
         // Collect inputs for all nodes first (while state is readable)
+        #[allow(clippy::type_complexity)]
         let mut node_tasks: Vec<(Node, HashMap<String, serde_json::Value>, Arc<dyn crate::nodes::traits::NodeExecutor>, serde_json::Value)> = Vec::new();
 
         {

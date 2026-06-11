@@ -90,10 +90,8 @@ impl NodeExecutor for DatabaseNode {
             })?;
 
             let mut rows = Vec::new();
-            for row in rows_result {
-                if let Ok(val) = row {
-                    rows.push(val);
-                }
+            for val in rows_result.flatten() {
+                rows.push(val);
             }
 
             let mut outputs = HashMap::new();

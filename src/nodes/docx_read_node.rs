@@ -130,13 +130,12 @@ fn extract_paragraphs(xml: &str) -> Vec<String> {
                     in_table = true;
                 }
             }
-            Ok(Event::Text(ref e)) => {
-                if in_paragraph && !in_table {
+            Ok(Event::Text(ref e))
+                if in_paragraph && !in_table => {
                     if let Ok(text) = e.unescape() {
                         current_text.push_str(&text);
                     }
                 }
-            }
             Ok(Event::End(ref e)) => {
                 let name_bytes = e.name().as_ref().to_vec();
                 let name = String::from_utf8_lossy(&name_bytes);

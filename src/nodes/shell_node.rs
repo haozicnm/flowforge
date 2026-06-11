@@ -69,7 +69,7 @@ impl NodeExecutor for ShellNode {
                 detail: "command is required".to_string(),
             })?;
 
-        let timeout_secs = config["timeout_secs"].as_u64().unwrap_or(30).max(1).min(300);
+        let timeout_secs = config["timeout_secs"].as_u64().unwrap_or(30).clamp(1, 300);
         let workdir = config["workdir"].as_str();
 
         tracing::warn!(
@@ -134,7 +134,7 @@ impl NodeExecutor for ShellNode {
         let exit_code = exit_status.code().unwrap_or(-1);
 
         // Read stdout/stderr with 1 MiB limit
-        const MAX_OUTPUT: usize = 1 * 1024 * 1024;
+        const MAX_OUTPUT: usize = 1024 * 1024;
 
         let stdout = read_output(child.stdout.take(), MAX_OUTPUT).await;
         let stderr = read_output(child.stderr.take(), MAX_OUTPUT).await;

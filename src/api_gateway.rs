@@ -10,7 +10,7 @@
 //!   - Rate limiting (requests per minute)
 //!   - Request logging
 
-use crate::engine::executor::{Executor, ExecutionEvent};
+use crate::engine::executor::Executor;
 use crate::engine::storage::WorkflowStorage;
 use crate::nodes::registry::NodeRegistry;
 use crate::webbridge::WebBridgeState;
@@ -149,6 +149,7 @@ impl ApiGateway {
     }
 
     /// Get a specific published API by path.
+    #[allow(dead_code)]
     pub fn get(&self, path: &str) -> Option<PublishedApi> {
         let published = self.published.lock().unwrap();
         published.get(path).cloned()
@@ -161,7 +162,7 @@ impl ApiGateway {
         }
 
         let mut rate_limits = self.rate_limits.lock().unwrap();
-        let entries = rate_limits.entry(path.to_string()).or_insert_with(Vec::new);
+        let entries = rate_limits.entry(path.to_string()).or_default();
 
         // Remove entries older than 1 minute
         let now = Instant::now();
@@ -218,7 +219,7 @@ impl ApiGateway {
             .map_err(|e| (500, format!("Failed to load workflow: {}", e)))?;
 
         // Build request context as input
-        let request_ctx = serde_json::json!({
+        let _request_ctx = serde_json::json!({
             "method": method,
             "body": body,
             "query": query_params,

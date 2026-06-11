@@ -17,6 +17,12 @@ pub struct NodeRegistry {
     executors: RwLock<HashMap<String, Arc<dyn NodeExecutor>>>,
 }
 
+impl Default for NodeRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NodeRegistry {
     pub fn new() -> Self {
         let registry = Self {

@@ -120,20 +120,20 @@ impl NodeExecutor for ConditionNode {
             }
             "is_empty" => {
                 value.is_null()
-                    || value.as_str().map_or(false, |s| s.is_empty())
-                    || value.as_array().map_or(false, |a| a.is_empty())
-                    || value.as_object().map_or(false, |o| o.is_empty())
+                    || value.as_str().is_some_and(|s| s.is_empty())
+                    || value.as_array().is_some_and(|a| a.is_empty())
+                    || value.as_object().is_some_and(|o| o.is_empty())
             }
             "is_not_empty" => {
                 !value.is_null()
-                    && !value.as_str().map_or(false, |s| s.is_empty())
-                    && !value.as_array().map_or(false, |a| a.is_empty())
-                    && !value.as_object().map_or(false, |o| o.is_empty())
+                    && !value.as_str().is_some_and(|s| s.is_empty())
+                    && !value.as_array().is_some_and(|a| a.is_empty())
+                    && !value.as_object().is_some_and(|o| o.is_empty())
             }
             "regex_match" => {
                 let s = value.as_str().unwrap_or("");
                 let pattern = compare.as_str().unwrap_or("");
-                regex::Regex::new(pattern).map_or(false, |re| re.is_match(s))
+                regex::Regex::new(pattern).is_ok_and(|re| re.is_match(s))
             }
             "starts_with" => {
                 let s = value.as_str().unwrap_or("");
@@ -295,7 +295,7 @@ impl<'a> ExprParser<'a> {
                 let s = tok[1..tok.len()-1].to_string();
                 Ok(serde_json::json!(s))
             }
-            _ if tok.chars().next().map_or(false, |c| c.is_ascii_digit() || c == '-') => {
+            _ if tok.chars().next().is_some_and(|c| c.is_ascii_digit() || c == '-') => {
                 if let Ok(n) = tok.parse::<f64>() {
                     Ok(serde_json::json!(n))
                 } else {
@@ -360,7 +360,7 @@ fn tokenize(expr: &str) -> Vec<String> {
                 }
                 tokens.push(format!("\"{}\"", s));
             }
-            '-' if chars.clone().nth(1).map_or(false, |c| c.is_ascii_digit()) => {
+            '-' if chars.clone().nth(1).is_some_and(|c| c.is_ascii_digit()) => {
                 let mut num = String::from('-');
                 chars.next();
                 while let Some(&ch) = chars.peek() {

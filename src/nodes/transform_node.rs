@@ -116,11 +116,11 @@ impl NodeExecutor for TransformNode {
             "json_to_xml" => json_to_xml(&input, root_tag, item_tag)?,
             "xml_to_json" => xml_to_json(&input)?,
             "csv_to_xml" => {
-                let (json_str, json_val) = csv_to_json(&input, delimiter)?;
+                let (json_str, _json_val) = csv_to_json(&input, delimiter)?;
                 json_to_xml(&json_str, root_tag, item_tag)?
             }
             "xml_to_csv" => {
-                let (json_str, json_val) = xml_to_json(&input)?;
+                let (json_str, _json_val) = xml_to_json(&input)?;
                 json_to_csv(&json_str, delimiter)?
             }
             _ => {
@@ -318,7 +318,7 @@ fn xml_to_json(input: &str) -> FlowResult<(String, serde_json::Value)> {
 
     loop {
         match reader.read_event() {
-            Ok(Event::Start(ref e)) => {
+            Ok(Event::Start(_e)) => {
                 stack.push(serde_json::Map::new());
                 current_text.clear();
             }
@@ -327,7 +327,7 @@ fn xml_to_json(input: &str) -> FlowResult<(String, serde_json::Value)> {
                 let text = current_text.trim().to_string();
                 current_text.clear();
 
-                if let Some(mut obj) = stack.pop() {
+                if let Some(obj) = stack.pop() {
                     let value = if obj.is_empty() && !text.is_empty() {
                         // Text-only element
                         if let Ok(n) = text.parse::<i64>() {

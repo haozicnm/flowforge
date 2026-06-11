@@ -180,7 +180,7 @@ impl NodeExecutor for LoopNode {
 
         match mode {
             "count" => {
-                let count = config["count"].as_u64().unwrap_or(3).max(0).min(1000);
+                let count = config["count"].as_u64().unwrap_or(3).min(1000);
                 tracing::info!("Loop '{}': repeating {} times", node.id, count);
 
                 for i in 0..count {

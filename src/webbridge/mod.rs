@@ -31,6 +31,12 @@ pub struct WebBridgeState {
     pending: Arc<Mutex<HashMap<String, PendingCommand>>>,
 }
 
+impl Default for WebBridgeState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WebBridgeState {
     pub fn new() -> Self {
         Self {

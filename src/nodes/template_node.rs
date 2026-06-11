@@ -52,9 +52,9 @@ impl NodeExecutor for TemplateNode {
             for (key, value) in obj {
                 let placeholder = format!("{{{{{}}}}}", key);
                 let val_str = match escape {
-                    "html" => html_escape(&value),
+                    "html" => html_escape(value),
                     "json" => serde_json::to_string(&value).unwrap_or_default(),
-                    _ => value_to_string(&value),
+                    _ => value_to_string(value),
                 };
                 result = result.replace(&placeholder, &val_str);
             }

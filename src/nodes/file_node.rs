@@ -4,7 +4,7 @@
 
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::engine::workflow::Node;
 use crate::error::{FlowError, FlowResult};
@@ -189,7 +189,7 @@ fn delete_file(path: &PathBuf, node: &Node) -> FlowResult<HashMap<String, serde_
     Ok(outputs)
 }
 
-fn move_file(base: &PathBuf, config: &serde_json::Value, node: &Node) -> FlowResult<HashMap<String, serde_json::Value>> {
+fn move_file(base: &Path, config: &serde_json::Value, node: &Node) -> FlowResult<HashMap<String, serde_json::Value>> {
     let from = config["path"].as_str().ok_or_else(|| FlowError::InvalidNodeConfig {
         node_id: node.id.clone(),
         detail: "path is required for source".into(),

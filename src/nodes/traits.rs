@@ -9,6 +9,8 @@
 //! resolver::resolve_node_config() before passing config to execute().
 
 use std::sync::Arc;
+/// Type alias for webhook store
+type WebhookStore = Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -29,7 +31,7 @@ pub struct NodeContext {
     pub node_registry: Option<Arc<NodeRegistry>>,
 
     /// Webhook store for reading incoming webhook payloads.
-    pub webhook_store: Option<Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>>,
+    pub webhook_store: Option<WebhookStore>,
 }
 
 impl NodeContext {
