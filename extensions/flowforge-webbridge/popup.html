@@ -3,50 +3,294 @@
 <head>
   <meta charset="UTF-8">
   <style>
-    body { width: 300px; padding: 0; margin: 0; font-family: system-ui; font-size: 12px; background: #0d1117; color: #c9d1d9; }
-    .header { padding: 10px 12px 6px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #21262d; }
-    .header h3 { margin: 0; font-size: 13px; flex: 1; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .dot-ok { background: #22a55b; }
-    .dot-err { background: #e53935; }
-    .section { padding: 8px 12px; border-bottom: 1px solid #21262d; }
-    .section-title { font-size: 10px; text-transform: uppercase; color: #8b949e; margin-bottom: 6px; letter-spacing: .5px; }
-    .row { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; }
-    .row label { color: #8b949e; width: 32px; flex-shrink: 0; }
-    input { width: 72px; padding: 3px 6px; border: 1px solid #30363d; border-radius: 4px; background: #161b22; color: #c9d1d9; font-size: 12px; }
-    button { padding: 3px 10px; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; }
-    .btn-save { background: #238636; color: #fff; }
-    .btn-save:hover { background: #2ea043; }
-    .btn-refresh { background: #21262d; color: #8b949e; }
-    .btn-refresh:hover { background: #30363d; }
-    .tab-item { padding: 2px 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tab-item .url { color: #58a6ff; }
-    .tab-item .title { color: #8b949e; margin-left: 4px; }
-    .tag { display: inline-block; padding: 1px 5px; border-radius: 3px; font-size: 10px; margin-right: 3px; }
-    .tag-active { background: #1a3a2a; color: #22a55b; }
-    .tag-session { background: #1a2a3a; color: #58a6ff; }
-    .info-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
-    .info-row .label { color: #8b949e; }
-    .empty { color: #484f58; font-style: italic; font-size: 11px; padding: 4px 0; }
+    /* ── FlowForge Design Tokens ─────────────────────────── */
+    :root {
+      /* Brand */
+      --ff-brand: #00B4D8;
+      --ff-brand-light: #90E0EF;
+      --ff-brand-dark: #0077B6;
+
+      /* Surface (dark) */
+      --ff-bg-primary: #1A1A2E;
+      --ff-bg-secondary: #22223A;
+      --ff-bg-tertiary: #2A2A44;
+
+      /* Borders */
+      --ff-border: #333355;
+      --ff-border-secondary: #2A2A44;
+
+      /* Text / Icons */
+      --ff-text-primary: #E8E2EE;
+      --ff-text-secondary: #A0A0B8;
+      --ff-text-disabled: #555570;
+
+      /* Semantic */
+      --ff-success: #28A745;
+      --ff-warning: #FFC107;
+      --ff-error: #DC3545;
+
+      /* Radius */
+      --ff-radius-sm: 4px;
+      --ff-radius-md: 8px;
+      --ff-radius-lg: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 12px;
+      background: var(--ff-bg-primary);
+      color: var(--ff-text-primary);
+      line-height: 1.5;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    .header {
+      padding: 14px 16px 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--ff-border);
+      background: linear-gradient(135deg, var(--ff-bg-secondary), var(--ff-bg-primary));
+    }
+    .header-logo {
+      width: 24px; height: 24px;
+      border-radius: var(--ff-radius-sm);
+      background: var(--ff-brand);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+      box-shadow: 0 0 8px rgba(0, 180, 216, 0.3);
+    }
+    .header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ff-text-primary);
+      flex: 1;
+      letter-spacing: -0.2px;
+    }
+    .header h3 span {
+      color: var(--ff-brand);
+    }
+    .conn-badge {
+      display: flex; align-items: center; gap: 5px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 500;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--ff-border);
+    }
+    .conn-badge .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-ok { background: var(--ff-success); box-shadow: 0 0 6px rgba(40,167,69,0.4); }
+    .dot-err { background: var(--ff-error); box-shadow: 0 0 6px rgba(220,53,69,0.4); }
+    .dot-checking { background: var(--ff-warning); box-shadow: 0 0 6px rgba(255,193,7,0.4); animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* ── Section ────────────────────────────────────────── */
+    .section {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--ff-border-secondary);
+    }
+    .section:last-child { border-bottom: none; }
+    .section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--ff-text-disabled);
+      margin-bottom: 8px;
+      letter-spacing: 0.8px;
+      font-weight: 600;
+    }
+
+    /* ── Connection config row ──────────────────────────── */
+    .config-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .config-row label {
+      color: var(--ff-text-secondary);
+      font-size: 11px;
+      width: 32px;
+      flex-shrink: 0;
+    }
+    input[type="number"] {
+      flex: 1;
+      padding: 6px 10px;
+      border: 1px solid var(--ff-border);
+      border-radius: var(--ff-radius-md);
+      background: var(--ff-bg-tertiary);
+      color: var(--ff-text-primary);
+      font-size: 12px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="number"]:focus {
+      border-color: var(--ff-brand);
+      box-shadow: 0 0 0 2px rgba(0, 180, 216, 0.15);
+    }
+
+    /* ── Buttons ────────────────────────────────────────── */
+    .btn {
+      padding: 6px 14px;
+      border: none;
+      border-radius: var(--ff-radius-md);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: inherit;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-primary {
+      background: var(--ff-brand);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: var(--ff-brand-dark);
+      box-shadow: 0 2px 8px rgba(0, 180, 216, 0.3);
+    }
+    .btn-ghost {
+      background: var(--ff-bg-tertiary);
+      color: var(--ff-text-secondary);
+      border: 1px solid var(--ff-border);
+    }
+    .btn-ghost:hover {
+      background: var(--ff-border);
+      color: var(--ff-text-primary);
+    }
+
+    /* ── Info rows ──────────────────────────────────────── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 12px;
+    }
+    .info-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 0;
+    }
+    .info-item .label {
+      color: var(--ff-text-disabled);
+      font-size: 11px;
+    }
+    .info-item .value {
+      color: var(--ff-text-secondary);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    /* ── Tag / Badge ────────────────────────────────────── */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 500;
+      gap: 3px;
+    }
+    .tag-active {
+      background: rgba(40, 167, 69, 0.12);
+      color: var(--ff-success);
+      border: 1px solid rgba(40, 167, 69, 0.2);
+    }
+    .tag-session {
+      background: rgba(0, 180, 216, 0.1);
+      color: var(--ff-brand-light);
+      border: 1px solid rgba(0, 180, 216, 0.2);
+    }
+
+    /* ── Tab list ───────────────────────────────────────── */
+    .tab-item {
+      padding: 6px 8px;
+      font-size: 11px;
+      border-radius: var(--ff-radius-sm);
+      margin-bottom: 2px;
+      overflow: hidden;
+      transition: background 0.1s;
+    }
+    .tab-item:hover {
+      background: var(--ff-bg-secondary);
+    }
+    .tab-item .url {
+      color: var(--ff-brand-light);
+      font-size: 10px;
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tab-item .title {
+      color: var(--ff-text-disabled);
+      font-size: 10px;
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-top: 1px;
+    }
+
+    /* ── Empty state ────────────────────────────────────── */
+    .empty {
+      color: var(--ff-text-disabled);
+      font-style: italic;
+      font-size: 11px;
+      padding: 8px 0;
+      text-align: center;
+    }
+
+    /* ── Footer ─────────────────────────────────────────── */
+    .footer {
+      padding: 8px 16px;
+      text-align: center;
+      font-size: 10px;
+      color: var(--ff-text-disabled);
+      border-top: 1px solid var(--ff-border-secondary);
+    }
+    .footer a {
+      color: var(--ff-brand);
+      text-decoration: none;
+    }
+    .footer a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div id="connDot" class="dot dot-err"></div>
-    <h3>FlowForge WebBridge</h3>
-    <span id="connLabel" style="font-size:11px;color:#8b949e">检查中...</span>
-  </div>
 
-  <div class="section">
-    <div class="section-title">连接配置</div>
-    <div class="row">
-      <label>端口</label>
-      <input type="number" id="port" min="1024" max="65535">
-      <button class="btn-save" id="save">保存</button>
-      <button class="btn-refresh" id="refresh">↻</button>
+  <!-- ── Header ──────────────────────────────────────── -->
+  <div class="header">
+    <div class="header-logo">⚡</div>
+    <h3><span>Flow</span>Forge</h3>
+    <div class="conn-badge">
+      <div id="connDot" class="dot dot-checking"></div>
+      <span id="connLabel">检查中...</span>
     </div>
   </div>
 
+  <!-- ── Connection Config ───────────────────────────── -->
+  <div class="section">
+    <div class="section-title">连接配置</div>
+    <div class="config-row">
+      <label>端口</label>
+      <input type="number" id="port" min="1024" max="65535" placeholder="19529">
+      <button class="btn btn-primary" id="save">保存</button>
+      <button class="btn btn-ghost" id="refresh" title="刷新状态">↻</button>
+    </div>
+  </div>
+
+  <!-- ── Status ──────────────────────────────────────── -->
   <div class="section">
     <div class="section-title">运行状态</div>
     <div id="statusBody">
@@ -54,11 +298,19 @@
     </div>
   </div>
 
+  <!-- ── Tabs ────────────────────────────────────────── -->
   <div class="section">
     <div class="section-title">标签页</div>
     <div id="tabBody">
       <div class="empty">加载中...</div>
     </div>
+  </div>
+
+  <!-- ── Footer ──────────────────────────────────────── -->
+  <div class="footer">
+    <a href="http://localhost:19529/api/docs" target="_blank">API 文档</a>
+    <span> · </span>
+    <a href="https://github.com/haozicnm/flowforge" target="_blank">GitHub</a>
   </div>
 
   <script src="popup.js"></script>

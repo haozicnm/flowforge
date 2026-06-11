@@ -17,12 +17,19 @@ document.getElementById('save').addEventListener('click', () => {
     const port = parseInt(portInput.value, 10);
     if (port < 1024 || port > 65535) {
         connLabel.textContent = '无效端口';
+        connDot.className = 'dot dot-err';
         return;
     }
     chrome.storage.sync.set({ wfPort: port }, () => {
         connLabel.textContent = `已保存 :${port}`;
+        connDot.className = 'dot dot-checking';
         setTimeout(refresh, 500);
     });
+});
+
+// ── 回车保存 ──
+portInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('save').click();
 });
 
 // ── 手动刷新 ──
@@ -30,6 +37,9 @@ document.getElementById('refresh').addEventListener('click', refresh);
 
 // ── 刷新状态 ──
 function refresh() {
+    connDot.className = 'dot dot-checking';
+    connLabel.textContent = '检查中...';
+
     chrome.runtime.sendMessage({ type: 'getDetailedStatus' }, (s) => {
         if (!s) {
             setConn(false, '无响应');
@@ -44,19 +54,42 @@ function refresh() {
         // 运行状态
         const attached = s.attachedTabs || [];
         const sessions = s.sessions || [];
-        statusBody.innerHTML = [
-            `<div class="info-row"><span class="label">版本</span><span>v${s.version || '?'}</span></div>`,
-            `<div class="info-row"><span class="label">活跃标签</span><span>${s.activeTabId || '—'}</span></div>`,
-            `<div class="info-row"><span class="label">CDP 附加</span><span>${attached.length} 个标签</span></div>`,
-            `<div class="info-row"><span class="label">会话数</span><span>${sessions.length}${sessions.length ? ': ' + sessions.join(', ') : ''}</span></div>`,
-        ].join('');
+
+        statusBody.innerHTML = `
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="label">版本</span>
+                    <span class="value">v${esc(s.version || '?')}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">活跃标签</span>
+                    <span class="value">${s.activeTabId || '—'}</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">CDP 附加</span>
+                    <span class="value">${attached.length} 个</span>
+                </div>
+                <div class="info-item">
+                    <span class="label">会话数</span>
+                    <span class="value">${sessions.length}</span>
+                </div>
+            </div>
+            ${sessions.length ? `<div style="margin-top:6px;font-size:10px;color:var(--ff-text-disabled)">${sessions.map(esc).join(' · ')}</div>` : ''}
+        `;
 
         // 标签列表
         if (s.tabs && s.tabs.length > 0) {
             tabBody.innerHTML = s.tabs.map(t => {
-                const activeTag = t.active ? '<span class="tag tag-active">活跃</span>' : '';
-                const url = t.url || '(无)';
-                return `<div class="tab-item">${activeTag}<span class="url">${esc(url)}</span><span class="title">${esc(t.title || '')}</span></div>`;
+                const tag = t.active
+                    ? '<span class="tag tag-active">● 活跃</span>'
+                    : '';
+                return `
+                    <div class="tab-item">
+                        ${tag}
+                        <span class="url">${esc(t.url || '(无)')}</span>
+                        ${t.title ? `<span class="title">${esc(t.title)}</span>` : ''}
+                    </div>
+                `;
             }).join('');
         } else {
             tabBody.innerHTML = '<div class="empty">无标签页</div>';
@@ -70,5 +103,7 @@ function setConn(ok, text) {
 }
 
 function esc(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
 }
