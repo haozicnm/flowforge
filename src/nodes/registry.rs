@@ -63,6 +63,7 @@ impl NodeRegistry {
 
         // === Email ===
         registry.register_builtin::<super::email_send_node::EmailSendNode>();
+        registry.register_builtin::<super::email_read_node::EmailReadNode>();
 
         // === File ===
         registry.register_builtin::<super::file_node::FileNode>();

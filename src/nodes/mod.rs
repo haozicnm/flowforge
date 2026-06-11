@@ -43,6 +43,7 @@ pub mod notification_node;
 
 // Email
 pub mod email_send_node;
+pub mod email_read_node;
 
 // File operations
 pub mod file_node;
