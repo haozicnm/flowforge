@@ -10,6 +10,7 @@ mod engine;
 mod error;
 mod nodes;
 mod plugin;
+mod scheduler;
 mod state;
 mod webbridge;
 
@@ -48,6 +49,9 @@ async fn main() {
 
     tracing::info!("FlowForge v{} starting...", env!("CARGO_PKG_VERSION"));
 
+    // Clone scheduler before state is moved into router
+    let scheduler = state.scheduler.clone();
+
     // Build router
     let app = Router::new()
         // Health
@@ -81,9 +85,26 @@ async fn main() {
         // Webhook trigger
         .route("/api/webhook/:workflow_id/:node_id", post(api::webhook_trigger))
         .route("/api/webhook/:workflow_id/:node_id", get(api::webhook_trigger))
+
+        // Schedule routes
+        .route("/api/schedules", get(api::list_schedules))
+        .route("/api/schedules", post(api::create_schedule))
+        .route("/api/schedules/:id", get(api::get_schedule))
+        .route("/api/schedules/:id", put(api::update_schedule))
+        .route("/api/schedules/:id", delete(api::delete_schedule))
+        .route("/api/schedules/:id/trigger", post(api::trigger_schedule))
         .layer(CorsLayer::permissive())
         .with_state(state)
         .fallback_service(tower_http::services::ServeDir::new(&static_dir));
+
+    // Start scheduler background tick
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            scheduler.tick().await;
+        }
+    });
+    tracing::info!("📅 Scheduler started");
 
     // Bind and serve
     let listener = tokio::net::TcpListener::bind(&bind_addr)

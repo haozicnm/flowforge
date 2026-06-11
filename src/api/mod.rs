@@ -471,6 +471,85 @@ pub async fn ws_execute(
     })
 }
 
+// ============================================================
+// Schedule API
+// ============================================================
+
+/// GET /api/schedules — list all schedules.
+pub async fn list_schedules(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let schedules = state.scheduler.list_schedules();
+    Json(serde_json::json!({
+        "schedules": schedules,
+        "total": schedules.len()
+    }))
+}
+
+/// POST /api/schedules — create a new schedule.
+pub async fn create_schedule(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let name = body.get("name").and_then(|v| v.as_str()).unwrap_or("Unnamed");
+    let workflow_id = match body.get("workflow_id").and_then(|v| v.as_str()) {
+        Some(id) => id.to_string(),
+        None => return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "workflow_id required"})))),
+    };
+    let cron_expr = match body.get("cron_expr").and_then(|v| v.as_str()) {
+        Some(expr) => expr.to_string(),
+        None => return Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "cron_expr required"})))),
+    };
+
+    match state.scheduler.create_schedule(name.to_string(), workflow_id, cron_expr) {
+        Ok(schedule) => Ok(Json(serde_json::json!(schedule))),
+        Err(e) => Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+    }
+}
+
+/// GET /api/schedules/:id — get a schedule.
+pub async fn get_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match state.scheduler.get_schedule(&id) {
+        Ok(schedule) => Ok(Json(serde_json::json!(schedule))),
+        Err(e) => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e.to_string()})))),
+    }
+}
+
+/// PUT /api/schedules/:id — update a schedule.
+pub async fn update_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match state.scheduler.update_schedule(&id, body) {
+        Ok(schedule) => Ok(Json(serde_json::json!(schedule))),
+        Err(e) => Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e.to_string()})))),
+    }
+}
+
+/// DELETE /api/schedules/:id — delete a schedule.
+pub async fn delete_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match state.scheduler.delete_schedule(&id) {
+        Ok(()) => Ok(Json(serde_json::json!({"deleted": true}))),
+        Err(e) => Err((StatusCode::NOT_FOUND, Json(serde_json::json!({"error": e.to_string()})))),
+    }
+}
+
+/// POST /api/schedules/:id/trigger — trigger a schedule immediately.
+pub async fn trigger_schedule(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    match state.scheduler.trigger_schedule(&id).await {
+        Ok(result) => Ok(Json(result)),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e.to_string()})))),
+    }
+}
+
 fn event_to_json(event: crate::engine::executor::ExecutionEvent) -> serde_json::Value {
     use crate::engine::executor::ExecutionEvent;
     match event {

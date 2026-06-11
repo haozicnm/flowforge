@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::auth::AuthState;
 use crate::engine::storage::WorkflowStorage;
 use crate::nodes::registry::NodeRegistry;
+use crate::scheduler::Scheduler;
 use crate::webbridge::WebBridgeState;
 
 /// Shared application state.
@@ -25,6 +26,9 @@ pub struct AppState {
     /// Pending webhook payloads (keyed by "workflow_id:node_id").
     /// Each value is a JSON object: { "body", "headers", "method", "received_at" }.
     pub webhook_store: Arc<std::sync::Mutex<std::collections::HashMap<String, Vec<serde_json::Value>>>>,
+
+    /// 调度器 — Cron 定时执行
+    pub scheduler: Arc<Scheduler>,
 
     /// Authentication database.
     pub auth_db: AuthState,
@@ -68,11 +72,25 @@ impl AppState {
                 .expect("Failed to initialize auth database"),
         );
 
+        let node_registry = Arc::new(NodeRegistry::new());
+        let storage = Arc::new(storage);
+        let webbridge = WebBridgeState::new();
+        let webhook_store = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+
+        let scheduler = Arc::new(Scheduler::new(
+            storage.clone(),
+            node_registry.clone(),
+            webbridge.clone(),
+            webhook_store.clone(),
+            &config.data_dir,
+        ));
+
         Self {
-            node_registry: Arc::new(NodeRegistry::new()),
-            storage: Arc::new(storage),
-            webbridge: WebBridgeState::new(),
-            webhook_store: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            node_registry,
+            storage,
+            webbridge,
+            webhook_store,
+            scheduler,
             auth_db,
             _config: config,
         }

@@ -8,5 +8,6 @@ pub mod engine;
 pub mod error;
 pub mod nodes;
 pub mod plugin;
+pub mod scheduler;
 pub mod state;
 pub mod webbridge;

@@ -52,6 +52,9 @@ pub enum FlowError {
     ExecutionAborted { reason: String },
 
     // ── Storage errors ──
+    #[error("Config error: {0}")]
+    ConfigError(String),
+
     #[error("Storage error: {detail}")]
     StorageError { detail: String },
 
