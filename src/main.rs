@@ -71,6 +71,7 @@ async fn main() {
         .route("/api/workflows/:id/export", get(api::export_workflow))
         // Execution
         .route("/api/workflows/:id/execute", post(api::execute_workflow))
+        .route("/api/workflows/:id/execute-step", post(api::execute_step))
         // WebBridge — browser automation via Chrome extension
         .route("/api/browser/status", get(api::browser_status))
         .route("/api/browser/command", post(webbridge::browser_command))

@@ -132,6 +132,64 @@ impl Executor {
             ))
     }
 
+    /// Execute one topological level (single-step mode).
+    ///
+    /// Takes the workflow and a partially-filled ExecutionState from previous steps.
+    /// Returns the updated state, which nodes were executed this step, and whether
+    /// there are more levels to execute.
+    pub async fn execute_step(
+        &self,
+        workflow: &Workflow,
+        mut state: ExecutionState,
+    ) -> FlowResult<(ExecutionState, Vec<String>, bool)> {
+        let nodes = workflow.nodes();
+        let edges = workflow.edges();
+
+        let levels = self.topological_levels(nodes, edges)?;
+        self.validate_references(nodes)?;
+
+        // Find the next level that hasn't been fully executed
+        for level in &levels {
+            let all_done = level.iter().all(|id| state.completed.contains(id) || state.failed.contains(id));
+            if all_done {
+                continue; // this level is already done
+            }
+
+            // Execute this level
+            let state_arc = Arc::new(RwLock::new(state));
+            if level.len() == 1 {
+                self.execute_single_node(&level[0], nodes, edges, &workflow.variables, &state_arc, &None).await?;
+            } else {
+                self.execute_parallel_nodes(level, nodes, edges, &workflow.variables, &state_arc, &None).await?;
+            }
+
+            let state = Arc::try_unwrap(state_arc)
+                .map(|s| s.into_inner())
+                .map_err(|_| FlowError::ExecutionError("state Arc still referenced".into()))?;
+
+            let executed = level.clone();
+            // Check if there are more levels
+            let mut has_more = false;
+            for future_level in &levels {
+                let all_done = future_level.iter().all(|id| state.completed.contains(id) || state.failed.contains(id));
+                if !all_done {
+                    has_more = true;
+                    break;
+                }
+            }
+
+            return Ok((state, executed, has_more));
+        }
+
+        // All levels already executed
+        Ok((state, vec![], false))
+    }
+
+    /// Get the execution plan (topological levels) without executing.
+    pub fn get_execution_plan(&self, workflow: &Workflow) -> FlowResult<Vec<Vec<String>>> {
+        self.topological_levels(workflow.nodes(), workflow.edges())
+    }
+
     /// Execute a single node: resolve → validate → execute.
     async fn execute_single_node(
         &self,

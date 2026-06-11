@@ -30,6 +30,7 @@ class NodeTypeDef {
   final String category;
   final List<PortDef> inputs;
   final List<PortDef> outputs;
+  final Map<String, dynamic>? configSchema;
 
   NodeTypeDef({
     required this.typeName,
@@ -38,6 +39,7 @@ class NodeTypeDef {
     required this.category,
     required this.inputs,
     required this.outputs,
+    this.configSchema,
   });
 
   factory NodeTypeDef.fromJson(Map<String, dynamic> json) {
@@ -52,6 +54,7 @@ class NodeTypeDef {
       outputs: (json['outputs'] as List)
           .map((p) => PortDef.fromJson(p as Map<String, dynamic>))
           .toList(),
+      configSchema: json['config_schema'] as Map<String, dynamic>?,
     );
   }
 }
@@ -229,6 +232,39 @@ class ExecutionResult {
   bool get isSuccess => status == 'completed';
 }
 
+/// Result of a single-step execution.
+class StepResult {
+  final String status;
+  final List<String> executed;
+  final bool hasMore;
+  final Map<String, dynamic> nodeOutputs;
+  final List<String> completed;
+  final List<String> failed;
+  final String? error;
+
+  StepResult({
+    required this.status,
+    this.executed = const [],
+    this.hasMore = false,
+    this.nodeOutputs = const {},
+    this.completed = const [],
+    this.failed = const [],
+    this.error,
+  });
+
+  factory StepResult.fromJson(Map<String, dynamic> json) {
+    return StepResult(
+      status: json['status'] as String,
+      executed: (json['executed'] as List?)?.map((e) => e as String).toList() ?? [],
+      hasMore: json['has_more'] as bool? ?? false,
+      nodeOutputs: (json['node_outputs'] as Map<String, dynamic>?) ?? {},
+      completed: (json['completed'] as List?)?.map((e) => e as String).toList() ?? [],
+      failed: (json['failed'] as List?)?.map((e) => e as String).toList() ?? [],
+      error: json['error'] as String?,
+    );
+  }
+}
+
 /// FlowForge API client.
 class FlowForgeApi {
   final String baseUrl;
@@ -350,6 +386,29 @@ class FlowForgeApi {
       throw ApiException('Failed to execute: ${response.statusCode}');
     }
     return ExecutionResult.fromJson(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
+  /// Single-step execution: run the next topological level.
+  Future<StepResult> executeStep(String id, {
+    required List<String> completed,
+    required List<String> failed,
+    required Map<String, dynamic> nodeOutputs,
+  }) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/workflows/$id/execute-step'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'completed': completed,
+        'failed': failed,
+        'node_outputs': nodeOutputs,
+      }),
+    );
+    if (response.statusCode != 200) {
+      throw ApiException('Failed to step: ${response.statusCode}');
+    }
+    return StepResult.fromJson(
       jsonDecode(response.body) as Map<String, dynamic>,
     );
   }

@@ -1,6 +1,8 @@
 // Visual canvas editor — drag nodes, draw edges, zoom/pan, undo/redo, minimap.
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import '../api/flowforge_api.dart';
 import '../theme/flowforge_theme.dart';
@@ -18,12 +20,29 @@ class _CanvasSnapshot {
   _CanvasSnapshot copy() => _CanvasSnapshot(
     nodes.map((n) => WorkflowNode(
       id: n.id, type: n.type, label: n.label,
-      config: n.config, positionX: n.positionX, positionY: n.positionY,
+      config: n.config, position: {'x': n.positionX, 'y': n.positionY},
     )).toList(),
     edges.map((e) => WorkflowEdge(
       from: e.from, fromPort: e.fromPort, to: e.to,
     )).toList(),
   );
+}
+
+/// A group of nodes rendered as a colored box on the canvas.
+class NodeGroup {
+  final String id;
+  String label;
+  final Set<String> nodeIds;
+  final Color color;
+  bool collapsed;
+
+  NodeGroup({
+    required this.id,
+    required this.label,
+    required this.nodeIds,
+    this.color = const Color(0xFF4FC3F7),
+    this.collapsed = false,
+  });
 }
 
 class CanvasEditor extends StatefulWidget {
@@ -43,6 +62,10 @@ class CanvasEditor extends StatefulWidget {
   final Map<String, int> nodeDurations;
   /// Map of node ID → output data (for hover tooltip).
   final Map<String, Map<String, dynamic>> nodeOutputs;
+  /// Node groups for visual grouping.
+  final List<NodeGroup> groups;
+  /// Callback when groups change.
+  final ValueChanged<List<NodeGroup>>? onGroupsChanged;
 
   const CanvasEditor({
     super.key,
@@ -57,6 +80,8 @@ class CanvasEditor extends StatefulWidget {
     this.failedNodes = const {},
     this.nodeDurations = const {},
     this.nodeOutputs = const {},
+    this.groups = const [],
+    this.onGroupsChanged,
   });
 
   @override
@@ -81,6 +106,12 @@ class _CanvasEditorState extends State<CanvasEditor> {
   // Hover state
   String? _hoveredNodeId;
   Offset _hoverPosition = Offset.zero;
+
+  // Multi-select state (box selection)
+  final Set<String> _selectedNodeIds = {};
+  Offset? _selectionStart;
+  Offset? _selectionEnd;
+  bool _isBoxSelecting = false;
 
   // Node size
   static const double _nodeWidth = 180.0;
@@ -138,6 +169,24 @@ class _CanvasEditorState extends State<CanvasEditor> {
     if (key == LogicalKeyboardKey.delete || key == LogicalKeyboardKey.backspace) {
       _deleteSelected();
     }
+    if (control && key == LogicalKeyboardKey.keyG) {
+      _groupSelectedNodes();
+    }
+    if (control && key == LogicalKeyboardKey.keyA) {
+      // Select all nodes
+      setState(() {
+        _selectedNodeIds.clear();
+        _selectedNodeIds.addAll(widget.nodes.map((n) => n.id));
+      });
+    }
+    if (key == LogicalKeyboardKey.escape) {
+      setState(() {
+        _selectedNodeIds.clear();
+        _selectionStart = null;
+        _selectionEnd = null;
+        _isBoxSelecting = false;
+      });
+    }
   }
 
   void _deleteSelected() {
@@ -151,6 +200,47 @@ class _CanvasEditorState extends State<CanvasEditor> {
     setState(() {});
   }
 
+  /// Group selected nodes into a visual group (Ctrl+G).
+  void _groupSelectedNodes() {
+    final ids = _selectedNodeIds.isNotEmpty
+        ? Set<String>.from(_selectedNodeIds)
+        : widget.selectedNodeId != null
+            ? {widget.selectedNodeId!}
+            : <String>{};
+    if (ids.length < 2) return; // need at least 2 nodes
+
+    _saveSnapshot();
+    final groupId = 'group_${DateTime.now().millisecondsSinceEpoch}';
+    final colors = [
+      const Color(0xFF4FC3F7), // light blue
+      const Color(0xFF81C784), // green
+      const Color(0xFFFFB74D), // orange
+      const Color(0xFFCE93D8), // purple
+      const Color(0xFFEF5350), // red
+    ];
+    final color = colors[widget.groups.length % colors.length];
+
+    final group = NodeGroup(
+      id: groupId,
+      label: '分组 ${widget.groups.length + 1}',
+      nodeIds: ids,
+      color: color,
+    );
+
+    final newGroups = [...widget.groups, group];
+    widget.onGroupsChanged?.call(newGroups);
+    setState(() {
+      _selectedNodeIds.clear();
+    });
+  }
+
+  /// Ungroup nodes in the given group.
+  void _ungroupNodes(String groupId) {
+    final newGroups = widget.groups.where((g) => g.id != groupId).toList();
+    widget.onGroupsChanged?.call(newGroups);
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -160,7 +250,7 @@ class _CanvasEditorState extends State<CanvasEditor> {
       focusNode: FocusNode()..requestFocus(),
       onKeyEvent: (e) {
         if (e is KeyDownEvent) {
-          _handleKey(e.logicalKey, e.physicalKeyboardKeyPressed(LogicalKeyboardKey.controlLeft) || e.physicalKeyboardKeyPressed(LogicalKeyboardKey.controlRight), e.physicalKeyboardKeyPressed(LogicalKeyboardKey.shiftLeft) || e.physicalKeyboardKeyPressed(LogicalKeyboardKey.shiftRight));
+          _handleKey(e.logicalKey, HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.controlLeft) || HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.controlRight), HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.shiftLeft) || HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.shiftRight));
         }
       },
       child: ClipRect(
@@ -176,6 +266,7 @@ class _CanvasEditorState extends State<CanvasEditor> {
                   painter: _CanvasPainter(
                     nodes: widget.nodes,
                     edges: widget.edges,
+                    groups: widget.groups,
                     panOffset: _panOffset,
                     scale: _scale,
                     selectedNodeId: widget.selectedNodeId,
@@ -274,7 +365,8 @@ class _CanvasEditorState extends State<CanvasEditor> {
           child: Stack(
             children: widget.nodes.map((node) {
               final screenPos = _worldToScreen(Offset(node.positionX, node.positionY));
-              final isSelected = widget.selectedNodeId == node.id;
+              final isSelected = widget.selectedNodeId == node.id || _selectedNodeIds.contains(node.id);
+              final isMultiSelected = _selectedNodeIds.contains(node.id) && widget.selectedNodeId != node.id;
               final isFailed = widget.failedNodes.contains(node.id);
               final duration = widget.nodeDurations[node.id];
 
@@ -290,21 +382,39 @@ class _CanvasEditorState extends State<CanvasEditor> {
                   }),
                   onExit: (_) => setState(() => _hoveredNodeId = null),
                   child: GestureDetector(
-                    onTap: () => widget.onNodeSelected?.call(node.id),
+                    onTap: () {
+                      final shiftHeld = HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.shiftLeft) ||
+                          HardwareKeyboard.instance.isLogicalKeyPressed(LogicalKeyboardKey.shiftRight);
+                      if (shiftHeld) {
+                        // Toggle multi-select
+                        setState(() {
+                          if (_selectedNodeIds.contains(node.id)) {
+                            _selectedNodeIds.remove(node.id);
+                          } else {
+                            _selectedNodeIds.add(node.id);
+                          }
+                        });
+                      } else {
+                        _selectedNodeIds.clear();
+                        widget.onNodeSelected?.call(node.id);
+                      }
+                    },
                     onDoubleTap: () => widget.onBreakpointToggle?.call(node.id),
                     onPanStart: (d) => _onNodeDragStart(node, d),
-                  onPanUpdate: (d) => _onNodeDragUpdate(node, d),
-                  onPanEnd: (_) => _onNodeDragEnd(node),
-                  child: Container(
+                    onPanUpdate: (d) => _onNodeDragUpdate(node, d),
+                    onPanEnd: (_) => _onNodeDragEnd(node),
+                    child: Container(
                     decoration: BoxDecoration(
                       color: isFailed
                           ? Colors.red.withValues(alpha: 0.1)
-                          : isSelected
-                              ? ext.brandColor.withValues(alpha: 0.15)
-                              : ext.surfaceColor,
+                          : isMultiSelected
+                              ? Colors.purple.withValues(alpha: 0.1)
+                              : isSelected
+                                  ? ext.brandColor.withValues(alpha: 0.15)
+                                  : ext.surfaceColor,
                       borderRadius: BorderRadius.circular(8 * _scale),
                       border: Border.all(
-                        color: isFailed ? Colors.red : isSelected ? ext.brandColor : ext.borderColor,
+                        color: isFailed ? Colors.red : isMultiSelected ? Colors.purple : isSelected ? ext.brandColor : ext.borderColor,
                         width: isSelected || isFailed ? 2 : 1,
                       ),
                       boxShadow: [
@@ -409,6 +519,7 @@ class _CanvasEditorState extends State<CanvasEditor> {
                       ],
                     ),
                   ),
+                ),
                 ),
               );
             }).toList(),
@@ -902,6 +1013,7 @@ class _OutputTooltip extends StatelessWidget {
 class _CanvasPainter extends CustomPainter {
   final List<WorkflowNode> nodes;
   final List<WorkflowEdge> edges;
+  final List<NodeGroup> groups;
   final Offset panOffset;
   final double scale;
   final String? selectedNodeId;
@@ -916,6 +1028,7 @@ class _CanvasPainter extends CustomPainter {
   _CanvasPainter({
     required this.nodes,
     required this.edges,
+    this.groups = const [],
     required this.panOffset,
     required this.scale,
     this.selectedNodeId,
@@ -935,6 +1048,11 @@ class _CanvasPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     _drawGrid(canvas, size);
 
+    // Draw groups (background rectangles behind nodes)
+    for (final group in groups) {
+      _drawGroup(canvas, group);
+    }
+
     // Draw edges
     for (final edge in edges) {
       _drawEdge(canvas, edge);
@@ -944,6 +1062,54 @@ class _CanvasPainter extends CustomPainter {
     if (edgeFromNodeId != null && edgeDrawEnd != null) {
       _drawTempEdge(canvas);
     }
+  }
+
+  /// Draw a group as a colored rectangle around its member nodes.
+  void _drawGroup(Canvas canvas, NodeGroup group) {
+    final groupNodes = nodes.where((n) => group.nodeIds.contains(n.id)).toList();
+    if (groupNodes.isEmpty) return;
+
+    // Calculate bounding box of group nodes
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = -double.infinity, maxY = -double.infinity;
+    for (final n in groupNodes) {
+      minX = math.min(minX, n.positionX);
+      minY = math.min(minY, n.positionY);
+      maxX = math.max(maxX, n.positionX + _nodeWidth);
+      maxY = math.max(maxY, n.positionY + _nodeHeight);
+    }
+
+    const padding = 20.0;
+    final topLeft = _worldToScreen(Offset(minX - padding, minY - padding - 24));
+    final bottomRight = _worldToScreen(Offset(maxX + padding, maxY + padding));
+    final rect = Rect.fromPoints(topLeft, bottomRight);
+
+    // Group background
+    final bgPaint = Paint()
+      ..color = group.color.withValues(alpha: 0.08)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(8)), bgPaint);
+
+    // Group border
+    final borderPaint = Paint()
+      ..color = group.color.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(8)), borderPaint);
+
+    // Group label
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: group.label,
+        style: TextStyle(
+          color: group.color.withValues(alpha: 0.8),
+          fontSize: 11 * scale,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(canvas, Offset(topLeft.dx + 8, topLeft.dy + 4));
   }
 
   void _drawGrid(Canvas canvas, Size size) {

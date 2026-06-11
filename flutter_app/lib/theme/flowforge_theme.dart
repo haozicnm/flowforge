@@ -174,6 +174,7 @@ class FlowForgeThemeExtension extends ThemeExtension<FlowForgeThemeExtension> {
   Color get brandColor => icon.primary;
   Color get surfaceColor => bg.primary;
   Color get borderColor => border.primary;
+  Color get textColor => icon.secondary; // use icon.secondary as text color
 
   // ── Convenience accessor ─────────────────────────────────────
   static FlowForgeThemeExtension of(BuildContext context) =>

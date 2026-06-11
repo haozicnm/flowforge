@@ -13,6 +13,8 @@
 //! - POST /api/workflows/:id/execute — execute a workflow
 //! - POST /api/webhook/:workflow_id/:node_id — webhook trigger
 
+use std::collections::HashMap;
+
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -362,6 +364,56 @@ pub async fn execute_workflow(
             "status": "failed",
             "error": e.to_string(),
             "failed": Vec::<String>::new(),
+        }))),
+    }
+}
+
+/// POST /api/workflows/:id/execute-step — single-step execution.
+/// Body: { "completed": [...], "node_outputs": {...}, "failed": [...] }
+/// Returns: { "executed": [...], "has_more": bool, "completed": [...], "node_outputs": {...}, "failed": [...] }
+pub async fn execute_step(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let workflow = state.storage.load(&id).map_err(|_| StatusCode::NOT_FOUND)?;
+
+    // Rebuild execution state from request body
+    let mut exec_state = crate::engine::executor::ExecutionState::new();
+    if let Some(completed) = body.get("completed").and_then(|v| v.as_array()) {
+        exec_state.completed = completed.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+    }
+    if let Some(failed) = body.get("failed").and_then(|v| v.as_array()) {
+        exec_state.failed = failed.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+    }
+    if let Some(outputs) = body.get("node_outputs").and_then(|v| v.as_object()) {
+        for (node_id, ports) in outputs {
+            if let Some(ports_obj) = ports.as_object() {
+                let port_map: HashMap<String, serde_json::Value> = ports_obj
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.clone()))
+                    .collect();
+                exec_state.node_outputs.insert(node_id.clone(), port_map);
+            }
+        }
+    }
+
+    let executor = crate::engine::executor::Executor::new(state.node_registry.clone())
+        .with_webbridge(state.webbridge.clone())
+        .with_webhook_store(state.webhook_store.clone());
+
+    match executor.execute_step(&workflow, exec_state).await {
+        Ok((new_state, executed, has_more)) => Ok(Json(serde_json::json!({
+            "status": if executed.is_empty() { "already_done" } else { "stepped" },
+            "executed": executed,
+            "has_more": has_more,
+            "node_outputs": new_state.node_outputs,
+            "completed": new_state.completed,
+            "failed": new_state.failed,
+        }))),
+        Err(e) => Ok(Json(serde_json::json!({
+            "status": "failed",
+            "error": e.to_string(),
         }))),
     }
 }
