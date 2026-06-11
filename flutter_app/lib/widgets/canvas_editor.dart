@@ -33,6 +33,10 @@ class CanvasEditor extends StatefulWidget {
   final CanvasChanged? onChanged;
   final String? selectedNodeId;
   final ValueChanged<String?>? onNodeSelected;
+  /// Set of node IDs that have breakpoints.
+  final Set<String> breakpoints;
+  /// Callback when a breakpoint is toggled.
+  final ValueChanged<String>? onBreakpointToggle;
 
   const CanvasEditor({
     super.key,
@@ -42,6 +46,8 @@ class CanvasEditor extends StatefulWidget {
     this.onChanged,
     this.selectedNodeId,
     this.onNodeSelected,
+    this.breakpoints = const {},
+    this.onBreakpointToggle,
   });
 
   @override
@@ -253,6 +259,7 @@ class _CanvasEditorState extends State<CanvasEditor> {
                 height: _nodeHeight * _scale,
                 child: GestureDetector(
                   onTap: () => widget.onNodeSelected?.call(node.id),
+                  onDoubleTap: () => widget.onBreakpointToggle?.call(node.id),
                   onPanStart: (d) => _onNodeDragStart(node, d),
                   onPanUpdate: (d) => _onNodeDragUpdate(node, d),
                   onPanEnd: (_) => _onNodeDragEnd(node),
@@ -292,6 +299,21 @@ class _CanvasEditorState extends State<CanvasEditor> {
                             ),
                           ),
                         ),
+
+                        // Breakpoint indicator (red dot)
+                        if (widget.breakpoints.contains(node.id))
+                          Positioned(
+                            top: 4 * _scale,
+                            left: 4 * _scale,
+                            child: Container(
+                              width: 10 * _scale,
+                              height: 10 * _scale,
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
 
                         // Input port
                         Positioned(

@@ -36,6 +36,8 @@ class _EditorPageState extends State<EditorPage> {
   int _propsViewMode = 0; // 0=form, 1=json
   String? _selectedNodeId;
   String _codeJson = '';
+  String _nodeSearchQuery = '';
+  final Set<String> _breakpoints = {};
 
   @override
   void initState() {
@@ -264,6 +266,11 @@ class _EditorPageState extends State<EditorPage> {
           Expanded(
             child: Row(
               children: [
+                // Left: node palette (only in canvas mode)
+                if (_viewMode == 0) ...[
+                  _buildNodePalette(theme, ext),
+                  const SizedBox(width: FlowForgeSpacing.md),
+                ],
                 // Canvas / Form / Code editor
                 Expanded(
                   flex: 3,
@@ -295,6 +302,158 @@ class _EditorPageState extends State<EditorPage> {
     );
   }
 
+  /// Left panel: categorized node palette with drag-to-add.
+  Widget _buildNodePalette(ThemeData theme, FlowForgeThemeExtension ext) {
+    // Group node types by category
+    final categories = <String, List<NodeTypeDef>>{};
+    for (final t in _nodeTypes) {
+      categories.putIfAbsent(t.category, () => []).add(t);
+    }
+    // Sort categories
+    final sortedCats = categories.keys.toList()..sort();
+
+    return Container(
+      width: 200,
+      decoration: BoxDecoration(
+        color: ext.surfaceColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: ext.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Icon(Icons.dashboard_customize_outlined, size: 16, color: ext.textColor),
+                const SizedBox(width: 8),
+                Text('节点', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ext.textColor)),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: ext.borderColor),
+          // Search field
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: '搜索节点...',
+                hintStyle: TextStyle(fontSize: 12, color: ext.textColor.withValues(alpha: 0.4)),
+                prefixIcon: Icon(Icons.search, size: 14, color: ext.textColor.withValues(alpha: 0.4)),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(6),
+                  borderSide: BorderSide(color: ext.borderColor),
+                ),
+                filled: true,
+                fillColor: ext.bgSecondary,
+              ),
+              style: TextStyle(fontSize: 12, color: ext.textColor),
+              onChanged: (v) => setState(() => _nodeSearchQuery = v),
+            ),
+          ),
+          // Node list grouped by category
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              itemCount: sortedCats.length,
+              itemBuilder: (ctx, i) {
+                final cat = sortedCats[i];
+                final types = categories[cat]!;
+                // Filter by search
+                final filtered = _nodeSearchQuery.isEmpty
+                    ? types
+                    : types.where((t) =>
+                        t.typeName.toLowerCase().contains(_nodeSearchQuery.toLowerCase()) ||
+                        t.displayName.toLowerCase().contains(_nodeSearchQuery.toLowerCase())
+                      ).toList();
+                if (filtered.isEmpty) return const SizedBox.shrink();
+
+                return Theme(
+                  data: theme.copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    initiallyExpanded: i < 3, // first 3 categories expanded
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+                    childrenPadding: const EdgeInsets.only(left: 8, right: 4, bottom: 4),
+                    title: Text(cat, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: ext.textColor)),
+                    children: filtered.map((t) => _buildPaletteNode(t, ext)).toList(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaletteNode(NodeTypeDef t, FlowForgeThemeExtension ext) {
+    return DragTarget<Map<String, String>>(
+      onAcceptWithDetails: (_) {},
+      builder: (ctx, _, __) {
+        return LongPressDraggable<Map<String, String>>(
+          data: {'type': t.typeName, 'label': t.displayName},
+          feedback: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: ext.brandColor.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: ext.brandColor),
+              ),
+              child: Text(t.displayName, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: ext.textColor)),
+            ),
+          ),
+          child: InkWell(
+            onTap: () => _addNodeFromPalette(t),
+            borderRadius: BorderRadius.circular(6),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+              child: Row(
+                children: [
+                  Container(
+                    width: 6, height: 6,
+                    decoration: BoxDecoration(color: ext.brandColor, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      t.displayName,
+                      style: TextStyle(fontSize: 12, color: ext.textColor),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Add a node to the canvas from the palette (click or drop).
+  void _addNodeFromPalette(NodeTypeDef t) {
+    final id = '${t.typeName}_${DateTime.now().millisecondsSinceEpoch % 10000}';
+    final node = WorkflowNode(
+      id: id,
+      type: t.typeName,
+      label: t.displayName,
+      config: {},
+      positionX: 100 + _nodes.length * 30.0, // stagger
+      positionY: 100 + _nodes.length * 20.0,
+    );
+    setState(() {
+      _nodes.add(node);
+      _selectedNodeId = id;
+    });
+  }
+
   Widget _buildCanvas(FlowForgeThemeExtension ext) {
     return Container(
       decoration: BoxDecoration(
@@ -311,6 +470,14 @@ class _EditorPageState extends State<EditorPage> {
           selectedNodeId: _selectedNodeId,
           onNodeSelected: (id) => setState(() => _selectedNodeId = id),
           onChanged: (nodes, edges) => setState(() {}),
+          breakpoints: _breakpoints,
+          onBreakpointToggle: (id) => setState(() {
+            if (_breakpoints.contains(id)) {
+              _breakpoints.remove(id);
+            } else {
+              _breakpoints.add(id);
+            }
+          }),
         ),
       ),
     );
