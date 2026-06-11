@@ -177,3 +177,47 @@ async fn read_output(pipe: Option<impl tokio::io::AsyncRead + Unpin>, max_bytes:
 
     String::from_utf8_lossy(&total).into_owned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "shell".to_string(),
+            label: "Test Shell".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_shell_echo() {
+        let node = make_node("shell_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"command": "echo hello"});
+        let inputs = HashMap::new();
+        let result = ShellNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["stdout"].as_str().unwrap().trim(), "hello");
+        assert_eq!(result["exit_code"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_shell_empty_command() {
+        let node = make_node("shell_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"command": ""});
+        let inputs = HashMap::new();
+        let result = ShellNode.execute(&node, &ctx, config, inputs).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_shell_type_def() {
+        let def = ShellNode.type_def();
+        assert_eq!(def.type_name, "shell");
+        assert_eq!(def.outputs.len(), 3);
+    }
+}

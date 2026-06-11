@@ -127,3 +127,87 @@ impl NodeExecutor for ConditionNode {
         Ok(outputs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "condition".to_string(),
+            label: "Test Condition".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_condition_equals_true() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operator": "equals", "compare_value": "hello"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!("hello"));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+        assert!(result.contains_key("true"));
+    }
+
+    #[tokio::test]
+    async fn test_condition_equals_false() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operator": "equals", "compare_value": "world"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!("hello"));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], false);
+        assert!(result.contains_key("false"));
+    }
+
+    #[tokio::test]
+    async fn test_condition_contains() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operator": "contains", "compare_value": "ell"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!("hello"));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_condition_gt() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operator": "gt", "compare_value": "5"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!(10));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_condition_is_empty() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operator": "is_empty"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!(""));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+
+    #[tokio::test]
+    async fn test_condition_starts_with() {
+        let node = make_node("cond_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"operator": "starts_with", "compare_value": "hel"});
+        let mut inputs = HashMap::new();
+        inputs.insert("value".to_string(), serde_json::json!("hello"));
+        let result = ConditionNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        assert_eq!(result["result"], true);
+    }
+}
