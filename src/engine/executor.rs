@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::engine::resolver;
-use crate::engine::workflow::{Edge, Node, Workflow};
+use crate::engine::workflow::{Edge, Node, Variable, Workflow};
 use crate::error::{FlowError, FlowResult};
 use crate::nodes::registry::NodeRegistry;
 use crate::nodes::traits::NodeContext;
@@ -117,10 +117,10 @@ impl Executor {
         for level in &levels {
             if level.len() == 1 {
                 // Single node — no need for parallelism overhead
-                self.execute_single_node(&level[0], nodes, edges, &state, &event_tx).await?;
+                self.execute_single_node(&level[0], nodes, edges, &workflow.variables, &state, &event_tx).await?;
             } else {
                 // Multiple independent nodes — run in parallel
-                self.execute_parallel_nodes(level, nodes, edges, &state, &event_tx).await?;
+                self.execute_parallel_nodes(level, nodes, edges, &workflow.variables, &state, &event_tx).await?;
             }
         }
 
@@ -138,6 +138,7 @@ impl Executor {
         node_id: &str,
         nodes: &[Node],
         edges: &[Edge],
+        workflow_vars: &[Variable],
         state: &Arc<RwLock<ExecutionState>>,
         event_tx: &Option<tokio::sync::mpsc::Sender<ExecutionEvent>>,
     ) -> FlowResult<()> {
@@ -155,7 +156,9 @@ impl Executor {
 
         // Resolve variables in config
         let step_outputs = state.read().await.flat_outputs();
-        let resolved_config = resolver::resolve_node_config(node, &step_outputs)?;
+        let resolved_config = resolver::resolve_node_config_with_context(
+            node, &step_outputs, workflow_vars, true,
+        )?;
 
         // Validate config
         let executor = self.registry.get_executor(&node.node_type)?;
@@ -228,6 +231,7 @@ impl Executor {
         node_ids: &[String],
         nodes: &[Node],
         edges: &[Edge],
+        workflow_vars: &[Variable],
         state: &Arc<RwLock<ExecutionState>>,
         event_tx: &Option<tokio::sync::mpsc::Sender<ExecutionEvent>>,
     ) -> FlowResult<()> {
@@ -242,7 +246,7 @@ impl Executor {
                 let node = nodes.iter().find(|n| &n.id == node_id)
                     .ok_or_else(|| FlowError::NodeNotFound(node_id.clone()))?;
 
-                let resolved_config = resolver::resolve_node_config(node, &step_outputs)?;
+                let resolved_config = resolver::resolve_node_config_with_context(node, &step_outputs, workflow_vars, true)?;
                 let executor = self.registry.get_executor(&node.node_type)?;
 
                 // Validate config before queuing
@@ -463,7 +467,7 @@ impl Executor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::workflow::{Edge, Node, Workflow};
+    use crate::engine::workflow::{Edge, Node, Variable, Workflow};
     use crate::nodes::registry::NodeRegistry;
     use chrono::Utc;
 

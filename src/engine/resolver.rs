@@ -25,7 +25,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
 
-use crate::engine::workflow::Node;
+use crate::engine::workflow::{Node, Variable};
 use crate::error::{FlowError, FlowResult};
 
 /// A resolved variable reference.
@@ -49,6 +49,17 @@ pub struct PlaceholderMap {
 /// Regex to match `{{stepId.portLabel}}` patterns outside of code fences.
 static VAR_REF_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\{\{([a-zA-Z_][a-zA-Z0-9_]*\.[a-zA-Z0-9_]+)\}\}").expect("invalid regex")
+});
+
+/// Regex to match `${env.VAR_NAME}` patterns (environment variables).
+static ENV_VAR_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\$\{env\.([a-zA-Z_][a-zA-Z0-9_]*)\}").expect("invalid env regex")
+});
+
+/// Regex to match `${var_name}` patterns (workflow global variables).
+/// Note: does NOT match `${env.*}` which is handled separately.
+static GLOBAL_VAR_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}").expect("invalid global regex")
 });
 
 /// Phase 1: Scan a JSON value for variable references and replace them with placeholders.
@@ -82,11 +93,85 @@ pub fn resolve_node_config(
     node: &Node,
     step_outputs: &HashMap<String, serde_json::Value>,
 ) -> FlowResult<serde_json::Value> {
-    // Phase 1: insert placeholders
+    resolve_node_config_with_context(node, step_outputs, &[], true)
+}
+
+/// Resolve all variables with full context: step outputs + workflow variables + env vars.
+///
+/// - `step_outputs`: outputs from upstream nodes (`{{stepId.portLabel}}`)
+/// - `workflow_vars`: workflow-level variables (`${var_name}`)
+/// - `resolve_env`: whether to resolve `${env.VAR_NAME}` from process environment
+pub fn resolve_node_config_with_context(
+    node: &Node,
+    step_outputs: &HashMap<String, serde_json::Value>,
+    workflow_vars: &[Variable],
+    resolve_env: bool,
+) -> FlowResult<serde_json::Value> {
+    // Phase 1: insert placeholders for {{stepId.portLabel}}
     let (intermediate, placeholders) = phase1_insert_placeholders(&node.config);
 
-    // Phase 2: resolve placeholders with actual values
-    phase2_resolve_placeholders(&intermediate, &placeholders, step_outputs)
+    // Phase 2: resolve step output placeholders
+    let mut resolved = phase2_resolve_placeholders(&intermediate, &placeholders, step_outputs)?;
+
+    // Phase 3: resolve ${env.VAR_NAME} and ${var_name}
+    resolve_extra_vars(&mut resolved, workflow_vars, resolve_env)?;
+
+    Ok(resolved)
+}
+
+/// Phase 3: Resolve `${env.VAR_NAME}` and `${var_name}` patterns in-place.
+fn resolve_extra_vars(
+    value: &mut serde_json::Value,
+    workflow_vars: &[Variable],
+    resolve_env: bool,
+) -> FlowResult<()> {
+    match value {
+        serde_json::Value::String(s) => {
+            let mut result = s.clone();
+
+            // Resolve ${env.VAR_NAME} first (more specific pattern)
+            if resolve_env {
+                for cap in ENV_VAR_RE.captures_iter(s.clone().as_str()) {
+                    let full_match = &cap[0];
+                    let var_name = &cap[1];
+                    if let Ok(val) = std::env::var(var_name) {
+                        result = result.replace(full_match, &val);
+                    }
+                }
+            }
+
+            // Resolve ${var_name} from workflow variables
+            for cap in GLOBAL_VAR_RE.captures_iter(s.clone().as_str()) {
+                let full_match = &cap[0];
+                let var_name = &cap[1];
+                // Skip ${env.*} — already handled above
+                if full_match.starts_with("${env.") {
+                    continue;
+                }
+                if let Some(wf_var) = workflow_vars.iter().find(|v| v.name == var_name) {
+                    let val_str = match &wf_var.value {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    result = result.replace(full_match, &val_str);
+                }
+            }
+
+            *s = result;
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                resolve_extra_vars(v, workflow_vars, resolve_env)?;
+            }
+        }
+        serde_json::Value::Object(obj) => {
+            for v in obj.values_mut() {
+                resolve_extra_vars(v, workflow_vars, resolve_env)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// Extract all variable references from a JSON value.
@@ -329,3 +414,84 @@ mod tests {
         assert!(ref_strs.contains(&"auth.username".to_string()));
     }
 }
+
+    #[test]
+    fn test_resolve_env_var() {
+        // Set a test env var
+        std::env::set_var("FLOWFORGE_TEST_VAR", "hello_env");
+
+        let config = serde_json::json!({"url": "${env.FLOWFORGE_TEST_VAR}/data"});
+        let node = crate::engine::workflow::Node {
+            id: "test".to_string(),
+            node_type: "http".to_string(),
+            label: "Test".to_string(),
+            config,
+            position: Default::default(),
+        };
+
+        let resolved = resolve_node_config(&node, &HashMap::new()).unwrap();
+        assert_eq!(resolved["url"], "hello_env/data");
+
+        std::env::remove_var("FLOWFORGE_TEST_VAR");
+    }
+
+    #[test]
+    fn test_resolve_global_var() {
+        use crate::engine::workflow::Variable;
+
+        let config = serde_json::json!({"endpoint": "${api_url}/v1"});
+        let node = crate::engine::workflow::Node {
+            id: "test".to_string(),
+            node_type: "http".to_string(),
+            label: "Test".to_string(),
+            config,
+            position: Default::default(),
+        };
+
+        let vars = vec![Variable {
+            name: "api_url".to_string(),
+            value: serde_json::json!("https://api.example.com"),
+            description: String::new(),
+        }];
+
+        let resolved = resolve_node_config_with_context(&node, &HashMap::new(), &vars, false).unwrap();
+        assert_eq!(resolved["endpoint"], "https://api.example.com/v1");
+    }
+
+    #[test]
+    fn test_resolve_mixed_vars() {
+        use crate::engine::workflow::Variable;
+
+        // Mix of step output, global var, and static text
+        let config = serde_json::json!({
+            "url": "${api_url}/users/{{http1.response}}",
+            "timeout": "${timeout}"
+        });
+        let node = crate::engine::workflow::Node {
+            id: "test".to_string(),
+            node_type: "http".to_string(),
+            label: "Test".to_string(),
+            config,
+            position: Default::default(),
+        };
+
+        let mut step_outputs = HashMap::new();
+        step_outputs.insert("http1.response".to_string(), serde_json::json!("123"));
+
+        let vars = vec![
+            Variable {
+                name: "api_url".to_string(),
+                value: serde_json::json!("https://api.example.com"),
+                description: String::new(),
+            },
+            Variable {
+                name: "timeout".to_string(),
+                value: serde_json::json!(30),
+                description: String::new(),
+            },
+        ];
+
+        let resolved = resolve_node_config_with_context(&node, &step_outputs, &vars, false).unwrap();
+        assert_eq!(resolved["url"], "https://api.example.com/users/123");
+        assert_eq!(resolved["timeout"], "30"); // replaced as string
+    }
