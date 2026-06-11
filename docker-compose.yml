@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  flowforge:
+    build: .
+    container_name: flowforge
+    ports:
+      - "19529:19529"
+    volumes:
+      - flowforge-data:/opt/flowforge/data
+    environment:
+      - RUST_LOG=flowforge=info,tower_http=info
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:19529/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  flowforge-data:
+    driver: local

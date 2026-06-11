@@ -1,0 +1,18 @@
+[Unit]
+Description=FlowForge Workflow Automation Engine
+After=network.target
+
+[Service]
+Type=simple
+User=flowforge
+Group=flowforge
+WorkingDirectory=/opt/flowforge
+ExecStart=/opt/flowforge/flowforge --port 19529 --data-dir /opt/flowforge/data
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+Environment=RUST_LOG=flowforge=info,tower_http=info
+
+[Install]
+WantedBy=multi-user.target

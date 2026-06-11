@@ -22,10 +22,34 @@ use axum::{
 use tower_http::cors::CorsLayer;
 use tracing_subscriber::prelude::*;
 
+use clap::Parser;
 use state::{AppState, ServerConfig};
+
+/// FlowForge — Visual Workflow Automation Engine
+#[derive(Parser, Debug)]
+#[command(name = "flowforge", version, about)]
+struct Cli {
+    /// Port to listen on
+    #[arg(short, long, default_value = "19529")]
+    port: u16,
+
+    /// Data directory for persistence
+    #[arg(short, long, default_value = "data")]
+    data_dir: String,
+
+    /// Static files directory (Flutter web build)
+    #[arg(short, long, default_value = "dist")]
+    static_dir: String,
+
+    /// Bind address
+    #[arg(long, default_value = "127.0.0.1")]
+    bind: String,
+}
 
 #[tokio::main]
 async fn main() {
+    let cli = Cli::parse();
+
     // Setup logging
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
@@ -34,7 +58,11 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let config = ServerConfig::default();
+    let config = ServerConfig {
+        bind_addr: format!("{}:{}", cli.bind, cli.port),
+        static_dir: cli.static_dir,
+        data_dir: cli.data_dir,
+    };
     let bind_addr = config.bind_addr.clone();
     let static_dir = config.static_dir.clone();
 
