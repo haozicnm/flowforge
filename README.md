@@ -21,7 +21,7 @@ Flutter Desktop Window
 ## Features
 
 - **Visual Editor** — Drag-and-drop workflow design
-- **31 Node Types** — HTTP, file, shell, data manipulation, flow control
+- **33 Node Types** — HTTP, file, shell, data transform, flow control, scheduling
 - **Real-time Execution** — WebSocket-based live updates
 - **Variable System** — Automatic variable resolution between nodes
 - **Error Handling** — Unified error types with context
@@ -32,6 +32,19 @@ Flutter Desktop Window
 ### Pre-built Binaries
 
 Download from [GitHub Releases](https://github.com/haozicnm/flowforge/releases).
+
+### Docker (Recommended)
+
+```bash
+# One-command start
+docker compose up -d
+
+# Or build manually
+docker build -t flowforge .
+docker run -d -p 19529:19529 -v flowforge-data:/opt/flowforge/data flowforge
+```
+
+Open http://localhost:19529 in your browser.
 
 ### Build from Source
 
@@ -49,6 +62,8 @@ flutter build linux --release  # or windows/macos
 
 1. **Start the server**
    ```bash
+   ./target/release/flowforge --port 19529 --data-dir ./data
+   # Or with defaults (127.0.0.1:19529)
    ./target/release/flowforge
    ```
 

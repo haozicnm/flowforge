@@ -153,10 +153,10 @@
 - [ ] 敏感数据：加密存储
 
 ### 5.3 部署方案
-- [ ] Docker：Dockerfile + docker-compose
-- [ ] 系统服务：systemd / Windows Service
+- [x] Docker：Dockerfile + docker-compose
+- [x] 系统服务：systemd / Windows Service
 - [ ] 反向代理：Nginx 配置示例
-- [ ] 健康检查：/health 端点
+- [x] 健康检查：/health 端点
 
 ### 5.4 文档完善
 - [ ] 用户手册：安装/配置/使用
