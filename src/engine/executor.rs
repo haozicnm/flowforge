@@ -545,7 +545,7 @@ impl Executor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::workflow::{Edge, Node, Variable, Workflow};
+    use crate::engine::workflow::{Edge, Node, Workflow};
     use crate::nodes::registry::NodeRegistry;
     use chrono::Utc;
 
