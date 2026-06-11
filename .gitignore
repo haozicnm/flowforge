@@ -20,4 +20,3 @@ Thumbs.db
 # Data
 /data/
 *.db
-flutter_app/pubspec.lock
