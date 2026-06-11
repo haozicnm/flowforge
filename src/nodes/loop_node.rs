@@ -50,10 +50,11 @@ async fn execute_body(
         sorted.push(current.clone());
         if let Some(nbrs) = adj.get(&current) {
             for nb in nbrs {
-                let d = in_degree.get_mut(nb).unwrap();
-                *d -= 1;
-                if *d == 0 {
-                    queue.push(nb.clone());
+                if let Some(d) = in_degree.get_mut(nb) {
+                    *d -= 1;
+                    if *d == 0 {
+                        queue.push(nb.clone());
+                    }
                 }
             }
         }
@@ -95,7 +96,7 @@ async fn execute_body(
     }
 
     // Return the last body node's outputs as the iteration result
-    Ok(outputs.get(sorted.last().unwrap()).cloned().unwrap_or_default())
+    Ok(sorted.last().and_then(|k| outputs.get(k)).cloned().unwrap_or_default())
 }
 
 #[async_trait]

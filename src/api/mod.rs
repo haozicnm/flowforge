@@ -309,7 +309,9 @@ pub async fn webhook_trigger(
 
     // Store the payload
     {
-        let mut store = state.webhook_store.lock().unwrap();
+        let mut store = state.webhook_store.lock().map_err(|_| {
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
         store.entry(key.clone()).or_default().push(payload);
     }
 
