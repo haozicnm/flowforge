@@ -67,6 +67,7 @@ impl NodeRegistry {
 
         // === FTP ===
         registry.register_builtin::<super::ftp_upload_node::FtpUploadNode>();
+        registry.register_builtin::<super::ftp_download_node::FtpDownloadNode>();
 
         // === File ===
         registry.register_builtin::<super::file_node::FileNode>();

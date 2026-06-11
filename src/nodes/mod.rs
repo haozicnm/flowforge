@@ -47,6 +47,7 @@ pub mod email_read_node;
 
 // FTP
 pub mod ftp_upload_node;
+pub mod ftp_download_node;
 
 // File operations
 pub mod file_node;
