@@ -39,11 +39,23 @@ jobs:
         run: |
           $v = "${{ github.ref_name }}" -replace 'v',''
           $dist = "FlowForge-v${v}-windows-x64"
+          New-Item -ItemType Directory -Force -Path "$dist"
           New-Item -ItemType Directory -Force -Path "$dist\data"
           New-Item -ItemType Directory -Force -Path "$dist\backend"
 
-          Copy-Item "target\release\flowforge.exe" "$dist\backend\"
-          Copy-Item "flutter_app\build\windows\x64\runner\Release\*" "$dist\" -Recurse
+          # Copy Rust backend
+          Copy-Item "target\release\flowforge.exe" "$dist\backend\" -ErrorAction Stop
+
+          # Copy Flutter build
+          $flutterDir = "flutter_app\build\windows\x64\runner\Release"
+          if (Test-Path $flutterDir) {
+            Copy-Item "$flutterDir\*" "$dist\" -Recurse -Force -ErrorAction Stop
+          } else {
+            Write-Host "Flutter build dir not at $flutterDir, searching..."
+            Get-ChildItem flutter_app\build -Recurse -Directory | Where-Object { $_.Name -eq "Release" } | ForEach-Object {
+              Copy-Item "$($_.FullName)\*" "$dist\" -Recurse -Force -ErrorAction Stop
+            }
+          }
 
           # Launcher
           @"
