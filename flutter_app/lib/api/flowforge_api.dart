@@ -199,12 +199,14 @@ class ExecutionResult {
   final String status;
   final Map<String, dynamic> nodeOutputs;
   final List<String> completed;
+  final List<String> failed;
   final String? error;
 
   ExecutionResult({
     required this.status,
     this.nodeOutputs = const {},
     this.completed = const [],
+    this.failed = const [],
     this.error,
   });
 
@@ -213,6 +215,10 @@ class ExecutionResult {
       status: json['status'] as String,
       nodeOutputs: (json['node_outputs'] as Map<String, dynamic>?) ?? {},
       completed: (json['completed'] as List?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+      failed: (json['failed'] as List?)
               ?.map((e) => e as String)
               .toList() ??
           [],

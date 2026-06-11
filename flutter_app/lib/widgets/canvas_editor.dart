@@ -37,6 +37,10 @@ class CanvasEditor extends StatefulWidget {
   final Set<String> breakpoints;
   /// Callback when a breakpoint is toggled.
   final ValueChanged<String>? onBreakpointToggle;
+  /// Set of node IDs that failed during execution.
+  final Set<String> failedNodes;
+  /// Map of node ID → execution duration in ms.
+  final Map<String, int> nodeDurations;
 
   const CanvasEditor({
     super.key,
@@ -48,6 +52,8 @@ class CanvasEditor extends StatefulWidget {
     this.onNodeSelected,
     this.breakpoints = const {},
     this.onBreakpointToggle,
+    this.failedNodes = const {},
+    this.nodeDurations = const {},
   });
 
   @override
@@ -251,6 +257,8 @@ class _CanvasEditorState extends State<CanvasEditor> {
             children: widget.nodes.map((node) {
               final screenPos = _worldToScreen(Offset(node.positionX, node.positionY));
               final isSelected = widget.selectedNodeId == node.id;
+              final isFailed = widget.failedNodes.contains(node.id);
+              final duration = widget.nodeDurations[node.id];
 
               return Positioned(
                 left: screenPos.dx,
@@ -265,13 +273,15 @@ class _CanvasEditorState extends State<CanvasEditor> {
                   onPanEnd: (_) => _onNodeDragEnd(node),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: isSelected
-                          ? ext.brandColor.withValues(alpha: 0.15)
-                          : ext.surfaceColor,
+                      color: isFailed
+                          ? Colors.red.withValues(alpha: 0.1)
+                          : isSelected
+                              ? ext.brandColor.withValues(alpha: 0.15)
+                              : ext.surfaceColor,
                       borderRadius: BorderRadius.circular(8 * _scale),
                       border: Border.all(
-                        color: isSelected ? ext.brandColor : ext.borderColor,
-                        width: isSelected ? 2 : 1,
+                        color: isFailed ? Colors.red : isSelected ? ext.brandColor : ext.borderColor,
+                        width: isSelected || isFailed ? 2 : 1,
                       ),
                       boxShadow: [
                         BoxShadow(
@@ -311,6 +321,28 @@ class _CanvasEditorState extends State<CanvasEditor> {
                               decoration: const BoxDecoration(
                                 color: Colors.red,
                                 shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+
+                        // Execution duration badge
+                        if (duration != null)
+                          Positioned(
+                            bottom: 2 * _scale,
+                            right: 4 * _scale,
+                            child: Container(
+                              padding: EdgeInsets.symmetric(horizontal: 4 * _scale, vertical: 1 * _scale),
+                              decoration: BoxDecoration(
+                                color: isFailed ? Colors.red.withValues(alpha: 0.2) : ext.brandColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4 * _scale),
+                              ),
+                              child: Text(
+                                duration >= 1000 ? '${(duration / 1000).toStringAsFixed(1)}s' : '${duration}ms',
+                                style: TextStyle(
+                                  fontSize: 9 * _scale,
+                                  color: isFailed ? Colors.red : ext.brandColor,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                           ),

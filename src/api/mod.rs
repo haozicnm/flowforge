@@ -356,10 +356,12 @@ pub async fn execute_workflow(
             "status": "completed",
             "node_outputs": exec_state.node_outputs,
             "completed": exec_state.completed,
+            "failed": exec_state.failed,
         }))),
         Err(e) => Ok(Json(serde_json::json!({
             "status": "failed",
             "error": e.to_string(),
+            "failed": Vec::<String>::new(),
         }))),
     }
 }

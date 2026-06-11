@@ -38,6 +38,8 @@ class _EditorPageState extends State<EditorPage> {
   String _codeJson = '';
   String _nodeSearchQuery = '';
   final Set<String> _breakpoints = {};
+  final Set<String> _failedNodes = {};
+  final Map<String, int> _nodeDurations = {};
 
   @override
   void initState() {
@@ -108,7 +110,7 @@ class _EditorPageState extends State<EditorPage> {
 
   Future<void> _execute() async {
     if (_workflow == null) return;
-    setState(() { _isExecuting = true; _output = '执行中...'; });
+    setState(() { _isExecuting = true; _output = '执行中...'; _failedNodes.clear(); _nodeDurations.clear(); });
     try {
       await _save();
       final result = await widget.api.executeWorkflow(_workflow!.id);
@@ -119,6 +121,13 @@ class _EditorPageState extends State<EditorPage> {
         buf.writeln('节点执行顺序:');
         for (final nodeId in result.completed) {
           buf.writeln('  ✓ $nodeId');
+        }
+        if (result.failed.isNotEmpty) {
+          buf.writeln();
+          buf.writeln('失败节点:');
+          for (final nodeId in result.failed) {
+            buf.writeln('  ✗ $nodeId');
+          }
         }
         if (result.nodeOutputs.isNotEmpty) {
           buf.writeln();
@@ -132,9 +141,15 @@ class _EditorPageState extends State<EditorPage> {
             }
           });
         }
+        setState(() {
+          _failedNodes.addAll(result.failed);
+        });
       } else {
         buf.writeln('❌ 执行失败');
         buf.writeln(result.error ?? '未知错误');
+        setState(() {
+          _failedNodes.addAll(result.failed);
+        });
       }
       setState(() { _output = buf.toString(); _isExecuting = false; });
     } catch (e) {
@@ -478,6 +493,8 @@ class _EditorPageState extends State<EditorPage> {
               _breakpoints.add(id);
             }
           }),
+          failedNodes: _failedNodes,
+          nodeDurations: _nodeDurations,
         ),
       ),
     );
