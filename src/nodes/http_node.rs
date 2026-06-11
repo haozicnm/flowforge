@@ -144,3 +144,46 @@ impl NodeExecutor for HttpNode {
         Ok(outputs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "http".to_string(),
+            label: "Test HTTP".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_http_no_url() {
+        let node = make_node("http_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({});
+        let inputs = HashMap::new();
+        let result = HttpNode.execute(&node, &ctx, config, inputs).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_http_invalid_method() {
+        let node = make_node("http_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"url": "http://example.com", "method": "INVALID"});
+        let inputs = HashMap::new();
+        let result = HttpNode.execute(&node, &ctx, config, inputs).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_http_type_def() {
+        let def = HttpNode.type_def();
+        assert_eq!(def.type_name, "http");
+        assert_eq!(def.outputs.len(), 3);
+    }
+}

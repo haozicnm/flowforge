@@ -259,3 +259,66 @@ impl NodeExecutor for LoopNode {
         Ok(outputs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::nodes::traits::NodeContext;
+
+    fn make_node(id: &str) -> Node {
+        Node {
+            id: id.to_string(),
+            node_type: "loop".to_string(),
+            label: "Test Loop".to_string(),
+            config: serde_json::json!({}),
+            position: Default::default(),
+        }
+    }
+
+    fn make_ctx_with_registry() -> NodeContext {
+        let registry = Arc::new(NodeRegistry::new());
+        NodeContext::with_registry(registry)
+    }
+
+    #[tokio::test]
+    async fn test_loop_count_empty_body() {
+        let node = make_node("loop_1");
+        let ctx = make_ctx_with_registry();
+        let config = serde_json::json!({"mode": "count", "count": 3});
+        let inputs = HashMap::new();
+        let result = LoopNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        let results = result["results"].as_array().unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(result["index"], 2);
+    }
+
+    #[tokio::test]
+    async fn test_loop_collection_empty_body() {
+        let node = make_node("loop_1");
+        let ctx = make_ctx_with_registry();
+        let config = serde_json::json!({"mode": "collection"});
+        let mut inputs = HashMap::new();
+        inputs.insert("collection".to_string(), serde_json::json!(["a", "b", "c"]));
+        let result = LoopNode.execute(&node, &ctx, config, inputs).await.unwrap();
+        let results = result["results"].as_array().unwrap();
+        assert_eq!(results.len(), 3);
+        assert_eq!(result["item"], "c");
+    }
+
+    #[tokio::test]
+    async fn test_loop_no_registry() {
+        let node = make_node("loop_1");
+        let ctx = NodeContext::empty();
+        let config = serde_json::json!({"mode": "count", "count": 1});
+        let inputs = HashMap::new();
+        let result = LoopNode.execute(&node, &ctx, config, inputs).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_loop_type_def() {
+        let def = LoopNode.type_def();
+        assert_eq!(def.type_name, "loop");
+        assert_eq!(def.outputs.len(), 3);
+    }
+}
