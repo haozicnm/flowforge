@@ -23,19 +23,29 @@ impl NodeExecutor for NotificationNode {
             display_name: "通知".to_string(),
             description: "发送通知 (Slack Webhook / Email SMTP / 自定义 Webhook)".to_string(),
             category: "通知".to_string(),
-            inputs: vec![
-                PortDef { label: "message".to_string(), data_type: "string".to_string(), required: false },
-            ],
+            inputs: vec![PortDef {
+                label: "message".to_string(),
+                data_type: "string".to_string(),
+                required: false,
+            }],
             outputs: vec![
-                PortDef { label: "status_code".to_string(), data_type: "number".to_string(), required: false },
-                PortDef { label: "success".to_string(), data_type: "boolean".to_string(), required: false },
+                PortDef {
+                    label: "status_code".to_string(),
+                    data_type: "number".to_string(),
+                    required: false,
+                },
+                PortDef {
+                    label: "success".to_string(),
+                    data_type: "boolean".to_string(),
+                    required: false,
+                },
             ],
             config_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "channel": {
                         "type": "string",
-                        "enum": ["slack", "email", "webhook"],
+                        "enum": ["slack", "feishu", "email", "webhook"],
                         "default": "slack"
                     },
                     "webhook_url": {"type": "string"},
@@ -46,7 +56,8 @@ impl NodeExecutor for NotificationNode {
                     "smtp_port": {"type": "number", "default": 587},
                     "smtp_user": {"type": "string"},
                     "smtp_pass": {"type": "string"},
-                    "from": {"type": "string"}
+                    "from": {"type": "string"},
+                    "webhook_method": {"type": "string", "enum": ["POST", "GET"], "default": "POST"}
                 },
                 "required": ["channel"]
             }),
@@ -61,12 +72,14 @@ impl NodeExecutor for NotificationNode {
         inputs: HashMap<String, serde_json::Value>,
     ) -> FlowResult<HashMap<String, serde_json::Value>> {
         let channel = config["channel"].as_str().unwrap_or("slack");
-        let message = config["message"].as_str()
+        let message = config["message"]
+            .as_str()
             .or_else(|| inputs.get("message").and_then(|v| v.as_str()))
             .unwrap_or("");
 
         match channel {
             "slack" => send_slack(node, &config, message).await,
+            "feishu" => send_feishu(node, &config, message).await,
             "email" => send_email(node, &config, message).await,
             "webhook" => send_webhook(node, &config, message).await,
             _ => Err(FlowError::InvalidNodeConfig {
@@ -77,19 +90,70 @@ impl NodeExecutor for NotificationNode {
     }
 }
 
-async fn send_slack(node: &Node, config: &serde_json::Value, message: &str) -> FlowResult<HashMap<String, serde_json::Value>> {
+async fn send_feishu(
+    node: &Node,
+    config: &serde_json::Value,
+    message: &str,
+) -> FlowResult<HashMap<String, serde_json::Value>> {
     let url = config["webhook_url"].as_str().ok_or_else(|| FlowError::InvalidNodeConfig {
         node_id: node.id.clone(),
-        detail: "webhook_url required for Slack".into(),
+        detail: "webhook_url required for Feishu/Lark".into(),
     })?;
+
+    // Validate it looks like a Feishu webhook URL
+    if !url.contains("feishu.cn") && !url.contains("larksuite.com") && !url.contains("open-apis/bot") {
+        tracing::warn!("Feishu URL may be incorrect: {}", url);
+    }
+
+    let client = reqwest::Client::new();
+    // Feishu custom bot format: {"msg_type": "text", "content": {"text": message}}
+    let body = serde_json::json!({
+        "msg_type": "text",
+        "content": {
+            "text": message
+        }
+    });
+
+    let resp = client.post(url).json(&body).send().await.map_err(|e| {
+        FlowError::NodeExecutionFailed {
+            node_id: node.id.clone(),
+            detail: format!("Feishu request failed: {}", e),
+        }
+    })?;
+
+    let status = resp.status().as_u16();
+    let mut outputs = HashMap::new();
+    outputs.insert("status_code".into(), serde_json::json!(status));
+    // Feishu returns 200 on success, even for non-text messages
+    outputs.insert("success".into(), serde_json::json!(status == 200));
+    Ok(outputs)
+}
+
+async fn send_slack(
+    node: &Node,
+    config: &serde_json::Value,
+    message: &str,
+) -> FlowResult<HashMap<String, serde_json::Value>> {
+    let url = config["webhook_url"]
+        .as_str()
+        .ok_or_else(|| FlowError::InvalidNodeConfig {
+            node_id: node.id.clone(),
+            detail: "webhook_url required for Slack".into(),
+        })?;
 
     let client = reqwest::Client::new();
     let body = serde_json::json!({"text": message});
 
-    let resp = client.post(url).json(&body).send().await.map_err(|e| FlowError::NodeExecutionFailed {
-        node_id: node.id.clone(),
-        detail: format!("Slack: {}", e),
-    })?;
+    let resp =
+        client
+            .post(url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| FlowError::NodeExecutionFailed {
+                node_id: node.id.clone(),
+                detail: format!("Slack: {}", e),
+            })?;
 
     let status = resp.status().as_u16();
 
@@ -99,8 +163,13 @@ async fn send_slack(node: &Node, config: &serde_json::Value, message: &str) -> F
     Ok(outputs)
 }
 
-async fn send_email(node: &Node, config: &serde_json::Value, message: &str) -> FlowResult<HashMap<String, serde_json::Value>> {
-    let url = config["webhook_url"].as_str()
+async fn send_email(
+    node: &Node,
+    config: &serde_json::Value,
+    message: &str,
+) -> FlowResult<HashMap<String, serde_json::Value>> {
+    let url = config["webhook_url"]
+        .as_str()
         .or_else(|| config["smtp_host"].as_str().map(|_| ""))
         .ok_or_else(|| FlowError::InvalidNodeConfig {
             node_id: node.id.clone(),
@@ -120,19 +189,25 @@ async fn send_email(node: &Node, config: &serde_json::Value, message: &str) -> F
         "text": message,
     });
 
-    let resp = if url.is_empty() {
-        // No webhook URL configured — signal not sent
-        tracing::warn!("Email node {}: no webhook_url configured, skipping send", node.id);
-        let mut outputs = HashMap::new();
-        outputs.insert("status_code".into(), serde_json::json!(0));
-        outputs.insert("success".into(), serde_json::json!(false));
-        return Ok(outputs);
-    } else {
-        client.post(url).json(&body).send().await.map_err(|e| FlowError::NodeExecutionFailed {
-            node_id: node.id.clone(),
-            detail: format!("Email: {}", e),
-        })?
-    };
+    let resp =
+        if url.is_empty() {
+            // No webhook URL configured — signal not sent
+            tracing::warn!(
+                "Email node {}: no webhook_url configured, skipping send",
+                node.id
+            );
+            let mut outputs = HashMap::new();
+            outputs.insert("status_code".into(), serde_json::json!(0));
+            outputs.insert("success".into(), serde_json::json!(false));
+            return Ok(outputs);
+        } else {
+            client.post(url).json(&body).send().await.map_err(|e| {
+                FlowError::NodeExecutionFailed {
+                    node_id: node.id.clone(),
+                    detail: format!("Email: {}", e),
+                }
+            })?
+        };
 
     let status = resp.status().as_u16();
     let mut outputs = HashMap::new();
@@ -141,19 +216,39 @@ async fn send_email(node: &Node, config: &serde_json::Value, message: &str) -> F
     Ok(outputs)
 }
 
-async fn send_webhook(node: &Node, config: &serde_json::Value, message: &str) -> FlowResult<HashMap<String, serde_json::Value>> {
-    let url = config["webhook_url"].as_str().ok_or_else(|| FlowError::InvalidNodeConfig {
-        node_id: node.id.clone(),
-        detail: "webhook_url required".into(),
-    })?;
+async fn send_webhook(
+    node: &Node,
+    config: &serde_json::Value,
+    message: &str,
+) -> FlowResult<HashMap<String, serde_json::Value>> {
+    let url = config["webhook_url"]
+        .as_str()
+        .ok_or_else(|| FlowError::InvalidNodeConfig {
+            node_id: node.id.clone(),
+            detail: "webhook_url required".into(),
+        })?;
 
     let client = reqwest::Client::new();
-    let body = serde_json::json!({"message": message, "timestamp": chrono::Utc::now().to_rfc3339()});
+    let body =
+        serde_json::json!({"message": message, "timestamp": chrono::Utc::now().to_rfc3339()});
 
-    let resp = client.post(url).json(&body).send().await.map_err(|e| FlowError::NodeExecutionFailed {
-        node_id: node.id.clone(),
-        detail: format!("Webhook: {}", e),
-    })?;
+    let method = config["webhook_method"].as_str().unwrap_or("POST");
+
+    let resp = if method == "GET" {
+        client.get(url).send().await.map_err(|e| {
+            FlowError::NodeExecutionFailed {
+                node_id: node.id.clone(),
+                detail: format!("Webhook GET: {}", e),
+            }
+        })?
+    } else {
+        client.post(url).json(&body).send().await.map_err(|e| {
+            FlowError::NodeExecutionFailed {
+                node_id: node.id.clone(),
+                detail: format!("Webhook POST: {}", e),
+            }
+        })?
+    };
 
     let status = resp.status().as_u16();
     let mut outputs = HashMap::new();

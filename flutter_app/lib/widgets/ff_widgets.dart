@@ -4,6 +4,9 @@
 /// with theme-awareness built in.
 library;
 
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import '../theme/flowforge_theme.dart';
 
@@ -515,7 +518,7 @@ class FfDropdown<T> extends StatelessWidget {
     return SizedBox(
       width: width,
       child: DropdownButtonFormField<T>(
-        initialValue: value,
+        value: value,
         isExpanded: true,
         decoration: InputDecoration(
           hintText: hintText,
@@ -683,7 +686,7 @@ class FfToggle extends StatelessWidget {
           child: Switch(
             value: value,
             onChanged: onChanged,
-            activeThumbColor: ext.brandColor,
+            activeTrackColor: ext.brandColor,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ),
@@ -701,23 +704,26 @@ class FfToggle extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// FfTooltip — themed tooltip wrapper
+// FfTooltip — themed tooltip, supports plain text + rich TextSpan
 // ─────────────────────────────────────────────────────────────────
 
 class FfTooltip extends StatelessWidget {
-  final String message;
+  final String? message;
+  final InlineSpan? richMessage;
   final Widget child;
 
   const FfTooltip({
     super.key,
-    required this.message,
+    this.message,
+    this.richMessage,
     required this.child,
   });
 
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: message,
+      message: message ?? '',
+      richMessage: richMessage,
       preferBelow: false,
       textStyle: const TextStyle(fontSize: FontSizes.s12, color: Colors.white),
       decoration: BoxDecoration(
@@ -733,28 +739,74 @@ class FfTooltip extends StatelessWidget {
 // FfToast — overlay notification (global show function)
 // ─────────────────────────────────────────────────────────────────
 
+/// Overlay toast — supports top/bottom alignment + optional action button.
+
+
 enum FfToastType { success, error, warning, info }
 
 class FfToast {
+  final BuildContext context;
+  final String message;
+  final FfToastType type;
+  final Duration duration;
+  final Alignment alignment;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  FfToast._({
+    required this.context,
+    required this.message,
+    this.type = FfToastType.info,
+    this.duration = const Duration(seconds: 2),
+    this.alignment = Alignment.topCenter,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  /// Show a toast notification.
   static void show(
     BuildContext context, {
     required String message,
     FfToastType type = FfToastType.info,
     Duration duration = const Duration(seconds: 2),
+    Alignment alignment = Alignment.topCenter,
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
     final overlay = Overlay.of(context);
-    final entry = OverlayEntry(
-      builder: (ctx) => _ToastWidget(message: message, type: type),
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (ctx) => _ToastWidget(
+        message: message,
+        type: type,
+        alignment: alignment,
+        actionLabel: actionLabel,
+        onAction: onAction,
+        onDismiss: () => entry.remove(),
+      ),
     );
     overlay.insert(entry);
-    Future.delayed(duration, () => entry.remove());
+    Future.delayed(duration, () {
+      if (entry.mounted) entry.remove();
+    });
   }
 }
 
 class _ToastWidget extends StatefulWidget {
   final String message;
   final FfToastType type;
-  const _ToastWidget({required this.message, required this.type});
+  final Alignment alignment;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+  final VoidCallback onDismiss;
+  const _ToastWidget({
+    required this.message,
+    required this.type,
+    required this.alignment,
+    this.actionLabel,
+    this.onAction,
+    required this.onDismiss,
+  });
 
   @override
   State<_ToastWidget> createState() => _ToastWidgetState();
@@ -763,16 +815,16 @@ class _ToastWidget extends StatefulWidget {
 class _ToastWidgetState extends State<_ToastWidget>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _fade;
+  late final Animation<double> _anim;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 250),
     );
-    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _anim = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
     _ctrl.forward();
   }
 
@@ -802,41 +854,69 @@ class _ToastWidgetState extends State<_ToastWidget>
 
   @override
   Widget build(BuildContext context) {
+    final padding = widget.alignment == Alignment.topCenter
+        ? const EdgeInsets.only(top: 48)
+        : const EdgeInsets.only(bottom: 48);
+
     return FadeTransition(
-      opacity: _fade,
-      child: Material(
-        color: Colors.transparent,
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 48),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: _bgColor(),
-                borderRadius: BorderRadius.circular(FlowForgeRadius.md),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(_icon(), size: 16, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(widget.message,
-                      style: const TextStyle(
-                        fontSize: FontSizes.s13,
-                        fontWeight: FontWeights.medium,
-                        color: Colors.white,
-                      )),
-                  ),
-                ],
+      opacity: _anim,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: widget.alignment == Alignment.topCenter
+              ? const Offset(0, -0.3)
+              : const Offset(0, 0.3),
+          end: Offset.zero,
+        ).animate(_anim),
+        child: Material(
+          color: Colors.transparent,
+          child: Align(
+            alignment: widget.alignment,
+            child: Padding(
+              padding: padding,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _bgColor(),
+                  borderRadius: BorderRadius.circular(FlowForgeRadius.md),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_icon(), size: 16, color: Colors.white),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(widget.message,
+                        style: const TextStyle(
+                          fontSize: FontSizes.s13,
+                          fontWeight: FontWeights.medium,
+                          color: Colors.white,
+                        )),
+                    ),
+                    if (widget.actionLabel != null && widget.onAction != null) ...[
+                      const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () {
+                          widget.onAction?.call();
+                          widget.onDismiss();
+                        },
+                        child: Text(widget.actionLabel!,
+                          style: const TextStyle(
+                            fontSize: FontSizes.s12,
+                            fontWeight: FontWeights.semibold,
+                            color: Colors.white,
+                            decoration: TextDecoration.underline,
+                          )),
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -873,6 +953,8 @@ class SidebarResizer extends StatefulWidget {
 class _SidebarResizerState extends State<SidebarResizer> {
   late double _width;
   bool _dragging = false;
+  bool _isHover = false;
+  Timer? _showHoverTimer;
 
   @override
   void initState() {
@@ -881,20 +963,42 @@ class _SidebarResizerState extends State<SidebarResizer> {
   }
 
   @override
+  void dispose() {
+    _showHoverTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final ext = FlowForgeThemeExtension.of(context);
 
     return Stack(
       children: [
-        SizedBox(
-          width: _width,
-          child: widget.builder(context, _width),
+        // Sidebar content with smooth animated width
+        AnimatedSize(
+          duration: _dragging ? Duration.zero : const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: _width,
+            child: widget.builder(context, _width),
+          ),
         ),
+        // Resize handle (hover delay, animated color)
         Positioned(
           right: -4, top: 0, bottom: 0,
           width: 10,
           child: MouseRegion(
             cursor: SystemMouseCursors.resizeColumn,
+            onEnter: (_) {
+              _showHoverTimer = Timer(const Duration(milliseconds: 500), () {
+                if (mounted) setState(() => _isHover = true);
+              });
+            },
+            onExit: (_) {
+              _showHoverTimer?.cancel();
+              if (mounted) setState(() => _isHover = false);
+            },
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
               onPanStart: (_) => setState(() => _dragging = true),
@@ -907,11 +1011,20 @@ class _SidebarResizerState extends State<SidebarResizer> {
               },
               onPanEnd: (_) => setState(() => _dragging = false),
               child: Center(
-                child: Container(
-                  width: 2,
-                  color: _dragging
-                      ? ext.brandColor
-                      : ext.border.primary,
+                child: TweenAnimationBuilder<Color?>(
+                  tween: ColorTween(
+                    end: _isHover || _dragging
+                        ? ext.brandColor
+                        : ext.border.primary,
+                  ),
+                  duration: const Duration(milliseconds: 100),
+                  builder: (context, color, _) => Container(
+                    width: 2,
+                    decoration: BoxDecoration(
+                      color: color ?? ext.border.primary,
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -919,5 +1032,171 @@ class _SidebarResizerState extends State<SidebarResizer> {
         ),
       ],
     );
+  }
+}
+
+/// Sidebar resizer with AnimatedSize + hover delay (AppFlowy SecondaryViewResizer pattern).
+class FfPanelResizer extends StatefulWidget {
+  final double initialWidth;
+  final double minWidth;
+  final double maxWidth;
+  final ValueNotifier<double> widthNotifier;
+
+  const FfPanelResizer({
+    super.key,
+    required this.initialWidth,
+    required this.widthNotifier,
+    this.minWidth = 450,
+    this.maxWidth = 800,
+  });
+
+  @override
+  State<FfPanelResizer> createState() => _FfPanelResizerState();
+}
+
+class _FfPanelResizerState extends State<FfPanelResizer> {
+  bool _isHover = false;
+  bool _isDragging = false;
+  Timer? _hoverTimer;
+
+  @override
+  void dispose() {
+    _hoverTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ext = FlowForgeThemeExtension.of(context);
+
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeLeftRight,
+      onEnter: (_) {
+        _hoverTimer = Timer(const Duration(milliseconds: 500), () {
+          if (mounted) setState(() => _isHover = true);
+        });
+      },
+      onExit: (_) {
+        _hoverTimer?.cancel();
+        if (mounted) setState(() => _isHover = false);
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragStart: (_) => setState(() => _isDragging = true),
+        onHorizontalDragUpdate: (details) {
+          final newWidth = MediaQuery.of(context).size.width -
+              details.globalPosition.dx;
+          if (newWidth >= widget.minWidth) {
+            widget.widthNotifier.value = newWidth;
+          }
+        },
+        onHorizontalDragEnd: (_) => setState(() => _isDragging = false),
+        child: TweenAnimationBuilder(
+          tween: ColorTween(
+            end: _isHover || _isDragging
+                ? ext.brandColor
+                : Colors.transparent,
+          ),
+          duration: const Duration(milliseconds: 100),
+          builder: (context, color, child) {
+            return SizedBox(
+              width: 11,
+              child: Center(
+                child: Container(
+                  color: color,
+                  width: 2,
+                  height: double.infinity,
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// FadingIndexedStack — AppFlowy pattern: IndexedStack + fade
+// ─────────────────────────────────────────────────────────────────
+
+class FadingIndexedStack extends StatefulWidget {
+  final int index;
+  final List<Widget> children;
+  final Duration duration;
+
+  const FadingIndexedStack({
+    super.key,
+    required this.index,
+    required this.children,
+    this.duration = const Duration(milliseconds: 250),
+  });
+
+  @override
+  State<FadingIndexedStack> createState() => _FadingIndexedStackState();
+}
+
+class _FadingIndexedStackState extends State<FadingIndexedStack> {
+  double _targetOpacity = 1;
+
+  @override
+  void didUpdateWidget(FadingIndexedStack oldWidget) {
+    if (oldWidget.index == widget.index) return;
+    _targetOpacity = 0;
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => setState(() => _targetOpacity = 1),
+    );
+    super.didUpdateWidget(oldWidget);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      duration: _targetOpacity > 0 ? widget.duration : Duration.zero,
+      tween: Tween(begin: 0, end: _targetOpacity),
+      builder: (context, value, child) =>
+          Opacity(opacity: value, child: child),
+      child: IndexedStack(index: widget.index, children: widget.children),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SeparatedColumn — AppFlowy pattern: Column with auto-spacing
+// ─────────────────────────────────────────────────────────────────
+
+class SeparatedColumn extends StatelessWidget {
+  final List<Widget> children;
+  final MainAxisSize mainAxisSize;
+  final CrossAxisAlignment crossAxisAlignment;
+  final Widget Function() separatorBuilder;
+
+  const SeparatedColumn({
+    super.key,
+    required this.children,
+    this.mainAxisSize = MainAxisSize.max,
+    this.crossAxisAlignment = CrossAxisAlignment.start,
+    this.separatorBuilder = _defaultSeparator,
+  });
+
+  static Widget _defaultSeparator() => const SizedBox(height: 8);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: mainAxisSize,
+      crossAxisAlignment: crossAxisAlignment,
+      children: _interleave(),
+    );
+  }
+
+  List<Widget> _interleave() {
+    if (children.isEmpty) return [];
+    final result = <Widget>[children.first];
+    for (var i = 1; i < children.length; i++) {
+      result.add(separatorBuilder());
+      result.add(children[i]);
+    }
+    return result;
   }
 }

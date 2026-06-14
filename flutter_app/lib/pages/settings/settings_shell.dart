@@ -1,8 +1,10 @@
 /// Settings shell — AppFlowy SettingsDialog pattern.
 ///
 /// Layout: left SettingsMenu (204px) + FfDivider(vertical) + right content area.
+/// Use  when embedding inside a dialog that already has a title.
 library;
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import '../../api/flowforge_api.dart';
 import '../../theme/flowforge_theme.dart';
@@ -20,12 +22,14 @@ class SettingsShell extends StatefulWidget {
   final FlowForgeApi api;
   final ThemeMode themeMode;
   final ValueChanged<ThemeMode> onThemeModeChanged;
+  final bool showTitleBar;
 
   const SettingsShell({
     super.key,
     required this.api,
     required this.themeMode,
     required this.onThemeModeChanged,
+    this.showTitleBar = true,
   });
 
   @override
@@ -45,26 +49,23 @@ class _SettingsShellState extends State<SettingsShell> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top bar
-          SizedBox(
-            height: ext.topBarHeight,
-            child: FfText('设置', fontSize: FontSizes.s22, fontWeight: FontWeights.semibold,
-              color: theme.colorScheme.onSurface),
-          ),
-          const SizedBox(height: FlowForgeSpacing.md),
-          // Body
+          if (widget.showTitleBar) ...[
+            SizedBox(
+              height: ext.topBarHeight,
+              child: FfText('sidebar.settings'.tr(), fontSize: FontSizes.s22, fontWeight: FontWeights.semibold,
+                color: theme.colorScheme.onSurface),
+            ),
+            const SizedBox(height: FlowForgeSpacing.md),
+          ],
           Expanded(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Left menu
                 SizedBox(
                   width: 204,
                   child: _SettingsMenu(selected: _page, onChanged: (p) => setState(() => _page = p)),
                 ),
-                // Divider
                 const FfDivider(direction: Axis.vertical),
-                // Right content
                 Expanded(child: _buildPage()),
               ],
             ),
@@ -87,8 +88,6 @@ class _SettingsShellState extends State<SettingsShell> {
   }
 }
 
-// ── Menu ────────────────────────────────────────────────────────
-
 class _SettingsMenu extends StatelessWidget {
   final SettingsPageKind selected;
   final ValueChanged<SettingsPageKind> onChanged;
@@ -100,33 +99,13 @@ class _SettingsMenu extends StatelessWidget {
       padding: const EdgeInsets.only(right: FlowForgeSpacing.sm),
       child: Column(
         children: [
-          _MenuItem(
-            icon: FfIconName.settings,
-            label: '通用',
-            selected: selected == SettingsPageKind.general,
-            onTap: () => onChanged(SettingsPageKind.general),
-          ),
+          _MenuItem(icon: FfIconName.settings, label: '通用', selected: selected == SettingsPageKind.general, onTap: () => onChanged(SettingsPageKind.general)),
           const SizedBox(height: 2),
-          _MenuItem(
-            icon: FfIconName.bolt,
-            label: '快捷键',
-            selected: selected == SettingsPageKind.shortcuts,
-            onTap: () => onChanged(SettingsPageKind.shortcuts),
-          ),
+          _MenuItem(icon: FfIconName.bolt, label: '快捷键', selected: selected == SettingsPageKind.shortcuts, onTap: () => onChanged(SettingsPageKind.shortcuts)),
           const SizedBox(height: 2),
-          _MenuItem(
-            icon: FfIconName.info,
-            label: '关于',
-            selected: selected == SettingsPageKind.about,
-            onTap: () => onChanged(SettingsPageKind.about),
-          ),
+          _MenuItem(icon: FfIconName.info, label: '关于', selected: selected == SettingsPageKind.about, onTap: () => onChanged(SettingsPageKind.about)),
           const SizedBox(height: 2),
-          _MenuItem(
-            icon: FfIconName.add,
-            label: '插件',
-            selected: selected == SettingsPageKind.plugins,
-            onTap: () => onChanged(SettingsPageKind.plugins),
-          ),
+          _MenuItem(icon: FfIconName.add, label: '插件', selected: selected == SettingsPageKind.plugins, onTap: () => onChanged(SettingsPageKind.plugins)),
         ],
       ),
     );
@@ -148,16 +127,23 @@ class _MenuItem extends StatelessWidget {
     return FfButton(
       isSelected: selected,
       onTap: onTap,
-      builder: (ctx, hovering) => Container(
+      builder: (ctx, hovering) => AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: FlowForgeSpacing.sm),
+        padding: const EdgeInsets.only(left: FlowForgeSpacing.sm + 4),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              width: 2,
+              color: selected ? ext.brandColor : Colors.transparent,
+            ),
+          ),
+        ),
         child: Row(
           children: [
-            FfSvg(icon, size: 18,
-              color: selected ? ext.brandColor : theme.colorScheme.onSurface.withValues(alpha: 0.6)),
+            FfSvg(icon, size: 18, color: selected ? ext.brandColor : theme.colorScheme.onSurface.withValues(alpha: 0.6)),
             const SizedBox(width: FlowForgeSpacing.sm),
-            FfText(label, fontSize: FontSizes.s13,
-              fontWeight: selected ? FontWeights.semibold : FontWeights.regular,
+            FfText(label, fontSize: FontSizes.s13, fontWeight: selected ? FontWeights.semibold : FontWeights.regular,
               color: selected ? ext.brandColor : theme.colorScheme.onSurface.withValues(alpha: 0.8)),
           ],
         ),
