@@ -49,6 +49,7 @@ impl NodeExecutor for NotificationNode {
                         "default": "slack"
                     },
                     "webhook_url": {"type": "string"},
+                    "feishu_secret": {"type": "string", "description": "飞书机器人签名密钥（可选，开启签名校验时需要）"},
                     "message": {"type": "string"},
                     "title": {"type": "string"},
                     "to": {"type": "string"},
@@ -95,18 +96,28 @@ async fn send_feishu(
     config: &serde_json::Value,
     message: &str,
 ) -> FlowResult<HashMap<String, serde_json::Value>> {
-    let url = config["webhook_url"].as_str().ok_or_else(|| FlowError::InvalidNodeConfig {
+    let webhook_url = config["webhook_url"].as_str().ok_or_else(|| FlowError::InvalidNodeConfig {
         node_id: node.id.clone(),
         detail: "webhook_url required for Feishu/Lark".into(),
     })?;
 
     // Validate it looks like a Feishu webhook URL
-    if !url.contains("feishu.cn") && !url.contains("larksuite.com") && !url.contains("open-apis/bot") {
-        tracing::warn!("Feishu URL may be incorrect: {}", url);
+    if !webhook_url.contains("feishu.cn") && !webhook_url.contains("larksuite.com") && !webhook_url.contains("open-apis/bot") {
+        tracing::warn!("Feishu URL may be incorrect: {}", webhook_url);
     }
 
+    let secret = config["feishu_secret"].as_str().unwrap_or("");
+
+    // Build signed URL if secret is provided
+    let url = if !secret.is_empty() {
+        let timestamp = chrono::Utc::now().timestamp();
+        let sign = feishu_sign(timestamp, secret);
+        format!("{}&timestamp={}&sign={}", webhook_url, timestamp, sign)
+    } else {
+        webhook_url.to_string()
+    };
+
     let client = reqwest::Client::new();
-    // Feishu custom bot format: {"msg_type": "text", "content": {"text": message}}
     let body = serde_json::json!({
         "msg_type": "text",
         "content": {
@@ -114,7 +125,9 @@ async fn send_feishu(
         }
     });
 
-    let resp = client.post(url).json(&body).send().await.map_err(|e| {
+    tracing::info!("Feishu sending to: {}", url);
+
+    let resp = client.post(&url).json(&body).send().await.map_err(|e| {
         FlowError::NodeExecutionFailed {
             node_id: node.id.clone(),
             detail: format!("Feishu request failed: {}", e),
@@ -122,11 +135,30 @@ async fn send_feishu(
     })?;
 
     let status = resp.status().as_u16();
+    let resp_body = resp.text().await.unwrap_or_default();
+    tracing::info!("Feishu response: status={} body={}", status, &resp_body[..resp_body.len().min(200)]);
+
     let mut outputs = HashMap::new();
     outputs.insert("status_code".into(), serde_json::json!(status));
-    // Feishu returns 200 on success, even for non-text messages
     outputs.insert("success".into(), serde_json::json!(status == 200));
     Ok(outputs)
+}
+
+/// Compute Feishu/Lark webhook HMAC-SHA256 signature.
+fn feishu_sign(timestamp: i64, secret: &str) -> String {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+
+    let string_to_sign = format!("{}\n{}", timestamp, secret);
+
+    type HmacSha256 = Hmac<Sha256>;
+    let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
+        .expect("HMAC can take key of any size");
+    mac.update(string_to_sign.as_bytes());
+
+    let result = mac.finalize();
+    let code_bytes = result.into_bytes();
+    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &code_bytes)
 }
 
 async fn send_slack(

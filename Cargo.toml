@@ -77,6 +77,10 @@ url = "2"
 rusqlite = { version = "0.31", features = ["bundled"] }
 jsonwebtoken = "9"
 bcrypt = "0.15"
+# Feishu signature
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
 
 # Dynamic plugin loading
 libloading = "0.8"
